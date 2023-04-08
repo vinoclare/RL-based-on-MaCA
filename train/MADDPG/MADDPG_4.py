@@ -6,7 +6,7 @@ import torch.nn as nn
 import torch.nn.init as init
 import numpy as np
 import os
-from common.Replay import Memory
+from common.Replay2 import Memory
 from train.MADDPG.Critic import NetFighterCritic
 from train.MADDPG.Actor import NetFighterActor
 
@@ -109,9 +109,9 @@ class RLFighter:
             tem_dict[param_tensor] = tem_value
         target_net.load_state_dict(tem_dict)
 
-    def store_replay(self, s, alive, alive_, a, ma, oa, r, s_):
+    def store_replay(self, s, alive, alive_, a, r, s_):
         # 将每一step的经验加入经验池
-        self.memory.store_replay(s, alive, alive_, a, ma, oa, r, s_)
+        self.memory.store_replay(s, alive, alive_, a, r, s_)
 
     def get_memory_size(self):
         return self.memory.get_size()
@@ -213,7 +213,7 @@ class RLFighter:
         action = torch.cat([course, radar, disturb, attack], 1)
         return action
 
-    def learn(self, save_path, writer):
+    def learn(self, save_path, writer, batch_indexes, mate_agents, red_replay):
         # 复制参数+保存参数
         # learn50次复制/保存一次参数
         if self.learn_step_counter % self.replace_target_iter == 0:
@@ -249,8 +249,7 @@ class RLFighter:
 
         # 采样Replay
         [s_screen_batch, s_info_batch, alive_batch, alive__batch, self_a_batch,
-         mate_a_batch, other_a_batch, r_batch, s__screen_batch, s__info_batch] = self.memory.sample_replay(
-            self.batch_size, self.gpu_enable)
+         r_batch, s__screen_batch, s__info_batch] = self.memory.sample_replay(batch_indexes)
 
         self.critic_optimizer_fighter.zero_grad()
         self.actor_optimizer_fighter.zero_grad()
@@ -260,6 +259,18 @@ class RLFighter:
         self.action = self.action.view(self.action.size(0), 1, self.action.size(1))
         self.action_ = self.choose_action_batch_tar(s__screen_batch, s__info_batch, alive__batch)
         self.action_ = self.action_.view(self.action_.size(0), 1, self.action_.size(1))
+
+        # 队友action
+        mate_a_batch = []
+        for i in range(self.agent_num - 1):
+            [_, _, _, _, action, _, _, _] = mate_agents[i].memory.sample_replay(batch_indexes)
+            mate_a_batch.append(action)
+        mate_a_batch = torch.tensor(mate_a_batch)
+        mate_a_batch = mate_a_batch.permute(1, 0, 2)
+
+        # 敌方action
+        other_a_batch = red_replay.sample_replay(batch_indexes)
+
         # 双方全部的action
         self_a_batch = torch.unsqueeze(self_a_batch, 1)
         memory_action = torch.cat([self_a_batch, mate_a_batch, other_a_batch], 1).view(mate_a_batch.size(0), -1)
