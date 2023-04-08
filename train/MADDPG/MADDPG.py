@@ -300,7 +300,7 @@ class RLFighter:
                 self.pkl_counter += 1
             else:
                 # 删除最旧的模型参数
-                critic_path = os.path.join(save_path, 'critic')
+                critic_path = os.path.join(save_path, 'Critic.py')
                 actor_path = os.path.join(save_path, 'actor')
 
                 files = os.listdir(critic_path)

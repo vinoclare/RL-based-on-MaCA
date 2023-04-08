@@ -50,11 +50,12 @@ if __name__ == "__main__":
     red_detector_num, red_fighter_num, blue_detector_num, blue_fighter_num = env.get_unit_num()
     # 为双方设置环境信息
     blue_detector_action = []
-    blue_fighter_model = MADDPG.RLFighter(name='blue', agent_num=(DETECTOR_NUM + FIGHTER_NUM) * 2, attack_num=ATTACK_IND_NUM,
-                                          fighter_num=FIGHTER_NUM, radar_num=RADAR_NUM)
+    blue_fighter_models = []
+    for y in range(blue_fighter_num):
+        blue_fighter_model = MADDPG.RLFighter(name='blue_%d' % y, agent_num=(DETECTOR_NUM + FIGHTER_NUM) * 2, attack_num=ATTACK_IND_NUM,
+                                              fighter_num=FIGHTER_NUM, radar_num=RADAR_NUM)
+        blue_fighter_models.append(blue_fighter_model)
     red_agent.set_map_info(size_x, size_y, blue_detector_num, blue_fighter_num)
-    # blue_fighter_model = MADDPG.RLFighter(ACTION_NUM, load_state=True, model_path='model/MADDPG/blue/model_000001000.pkl')  # 从已有参数中加载
-    # red_fighter_model = MADDPG.RLFighter(ACTION_NUM, load_state=True, model_path='model/MADDPG/red/model_000001000.pkl')
 
     global_step_cnt = 0
     writer = SummaryWriter('runs/single-4')
@@ -78,16 +79,14 @@ if __name__ == "__main__":
             blue_obs_list = []  # 蓝色方的全体环境观测信息
             if step_cnt % 50 == 0:  # 50个step内航向保持一致，只更新攻击类型
                 blue_fighter_action = []  # 蓝色方所有agent的行动
-                blue_obs_got_ind = [False] * blue_fighter_num  # 环境信息获取情况(True or False)
                 for y in range(blue_fighter_num):  # 可以不用for循环，直接矩阵计算
-                    true_action = np.array([0, 1, 0, 0], dtype=np.int32)  # 第2、3维动作是预设定，未学习
-                    blue_obs_got_ind[y] = True
+                    true_action = np.array([0, 1, 0, 0], dtype=np.int32)
                     tmp_img_obs = blue_obs_dict['fighter'][y]['screen']
                     tmp_img_obs = tmp_img_obs.transpose(2, 0, 1)
                     tmp_info_obs = blue_obs_dict['fighter'][y]['info']
                     alive = 1 if blue_obs_dict['fighter'][y]['alive'] else 0
                     blue_alive.append(alive)
-                    true_action = blue_fighter_model.choose_action(tmp_img_obs, tmp_info_obs, alive)
+                    true_action = blue_fighter_models[y].choose_action(tmp_img_obs, tmp_info_obs, alive)
                     blue_obs_list.append({'screen': copy.deepcopy(tmp_img_obs), 'info': copy.deepcopy(tmp_info_obs)})
                     blue_fighter_action.append(true_action)
                 blue_fighter_action = np.array(blue_fighter_action)
@@ -99,7 +98,7 @@ if __name__ == "__main__":
                     tmp_info_obs = blue_obs_dict['fighter'][y]['info']
                     alive = 1 if blue_obs_dict['fighter'][y]['alive'] else 0
                     blue_alive.append(alive)
-                    true_action = blue_fighter_model.choose_action(tmp_img_obs, tmp_info_obs, alive)
+                    true_action = blue_fighter_models[y].choose_action(tmp_img_obs, tmp_info_obs, alive)
                     blue_obs_list.append({'screen': copy.deepcopy(tmp_img_obs), 'info': copy.deepcopy(tmp_info_obs)})
                     blue_fighter_action[y][3] = true_action[3]
 
@@ -135,22 +134,28 @@ if __name__ == "__main__":
                 self_action = blue_fighter_action[y]
                 mate_fighter_action = np.concatenate((blue_fighter_action[:y], blue_fighter_action[y + 1:]), 0)
                 blue_obs_list_ = {'screen': copy.deepcopy(tmp_img_obs), 'info': copy.deepcopy(tmp_info_obs)}
-                blue_fighter_model.store_replay(blue_obs_list[y], blue_alive[y], alive_, self_action,
-                                                mate_fighter_action, red_fighter_action2, blue_fighter_reward[y],
-                                                blue_obs_list_)
+                blue_fighter_models[y].store_replay(blue_obs_list[y], blue_alive[y], alive_, self_action,
+                                                    mate_fighter_action, red_fighter_action2, blue_fighter_reward[y],
+                                                    blue_obs_list_)
+
+            for y in range(blue_fighter_num):
+                if not os.path.exists('model/MADDPG/MADDPG/%d' % y):
+                    os.mkdir('model/MADDPG/MADDPG/%d' % y)
 
             # 环境判定完成后（回合完毕），开始学习模型参数
             if env.get_done():
                 # detector_model.learn()
-                blue_fighter_model.learn('model/MADDPG/single-4', writer)
+                for y in range(blue_fighter_num):
+                    blue_fighter_models[y].learn('model/MADDPG/MADDPG/%d' % y, writer)
                 writer.add_scalar(tag='blue_epoch_reward', scalar_value=blue_epoch_reward,
-                                   global_step=x)
+                                  global_step=x)
                 break
             # 未达到done但是达到了学习间隔时也学习模型参数
             # 100个step learn一次
-            if (blue_fighter_model.get_memory_size() > start_learn_threshold) and (step_cnt % LEARN_INTERVAL == 0):
+            if (blue_fighter_models[0].get_memory_size() > start_learn_threshold) and (step_cnt % LEARN_INTERVAL == 0):
                 # detector_model.learn()
-                blue_fighter_model.learn('model/MADDPG/single-4', writer)
+                for y in range(blue_fighter_num):
+                    blue_fighter_models[y].learn('model/MADDPG/MADDPG/%d' % y, writer)
 
             step_cnt += 1
             global_step_cnt += 1

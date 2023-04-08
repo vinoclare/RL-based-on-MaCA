@@ -7,109 +7,9 @@ import torch.nn.init as init
 import numpy as np
 import os
 from common.Replay import Memory
+from train.MADDPG.Critic import NetFighterCritic
+from train.MADDPG.Actor import NetFighterActor
 
-
-class NetFighterCritic(nn.Module):
-    # 输入img(screen)、info信息、所有Agent的action
-    # 输出价值q_value
-
-    def __init__(self, agent_num):
-        super(NetFighterCritic, self).__init__()
-        self.conv = nn.Sequential(  # batch * 100 * 100 * 5
-            nn.Conv2d(
-                in_channels=5,
-                out_channels=8,
-                kernel_size=5,
-                stride=1,
-                padding=2,
-            ),
-            nn.ReLU(),
-            nn.MaxPool2d(4),
-        )
-        self.img_layernorm = nn.LayerNorm(25 * 25 * 8)
-        self.info_fc = nn.Sequential(  # batch * 3
-            nn.Linear(3, 64),
-            nn.LayerNorm(64),
-            nn.Tanh(),
-        )
-        self.action_fc = nn.Sequential(  # batch * (4 * agent_num)
-            nn.Linear(4 * agent_num, 128),
-            nn.LayerNorm(128),
-            nn.Tanh(),
-        )
-        self.feature_fc = nn.Sequential(  # 25 * 25 * 64 + 256 + 256
-            nn.Linear((25 * 25 * 8 + 64 + 128), 256),
-            nn.LayerNorm(256),
-            nn.ReLU(),
-        )
-        self.decision_fc = nn.Sequential(
-            nn.Linear(256, 1),
-        )
-
-    def forward(self, img, info, act):
-        img_feature = self.conv(img)
-        img_feature = img_feature.view(img_feature.size(0), -1)
-        img_feature = self.img_layernorm(img_feature)
-        info_feature = self.info_fc(info)
-        action_feature = self.action_fc(act)
-        combined = torch.cat((img_feature, info_feature.view(info_feature.size(0), -1),
-                              action_feature.view(action_feature.size(0), -1)),
-                             dim=1)
-        feature = self.feature_fc(combined)
-        q_value = self.decision_fc(feature)
-        return q_value
-
-
-class NetFighterActor(nn.Module):
-    # 决定航向与攻击类型的Actor网络
-    # 输入img（screen）信息、info信息、agent存活信息
-    # 输出航向（[0-359]离散值）、攻击类型(连续值)
-
-    def __init__(self):
-        super(NetFighterActor, self).__init__()
-        self.conv = nn.Sequential(  # batch * 100 * 100 * 3
-            nn.Conv2d(
-                in_channels=5,
-                out_channels=8,
-                kernel_size=5,
-                stride=1,
-                padding=2,
-            ),
-            nn.ReLU(),
-            nn.MaxPool2d(4),
-        )
-        self.img_layernorm = nn.LayerNorm(25 * 25 * 8)
-        self.info_fc = nn.Sequential(
-            nn.Linear(3, 64),
-            nn.LayerNorm(64),
-            nn.Tanh(),
-        )
-        self.alive_fc = nn.Sequential(
-            nn.Linear(1, 4),
-            nn.LayerNorm(4),
-            nn.Tanh(),
-        )
-        self.feature_fc = nn.Sequential(
-            nn.Linear((25 * 25 * 8 + 64 + 4), 256),
-            nn.LayerNorm(256),
-            nn.Tanh(),
-        )
-        self.decision_fc = nn.Sequential(
-            nn.Linear(256, 4),
-        )
-
-    def forward(self, img, info, alive):
-        img_feature = self.conv(img)
-        img_feature = img_feature.view(img_feature.size(0), -1)
-        img_feature = self.img_layernorm(img_feature)
-        info_feature = self.info_fc(info)
-        alive_feature = self.alive_fc(alive)
-        combined = torch.cat((img_feature, info_feature.view(info_feature.size(0), -1),
-                              alive_feature.view(alive_feature.size(0), -1))
-                             , dim=1)
-        feature = self.feature_fc(combined)
-        decision = self.decision_fc(feature)
-        return decision
 
 class RLFighter:
     def __init__(
@@ -186,7 +86,6 @@ class RLFighter:
             self.eval_net_actor_fighter = self.eval_net_actor_fighter.cuda()
             self.target_net_actor_fighter = self.target_net_actor_fighter.cuda()
 
-
         self.loss_func = nn.MSELoss()
 
         # 加载已有的模型参数
@@ -200,10 +99,6 @@ class RLFighter:
         # Adam
         self.critic_optimizer_fighter = torch.optim.Adam(self.eval_net_critic_fighter.parameters(), lr=self.cr_lr)
         self.actor_optimizer_fighter = torch.optim.Adam(self.eval_net_actor_fighter.parameters(), lr=self.ac_lr)
-
-        # RMSprop
-        # self.critic_optimizer_fighter = torch.optim.RMSprop(self.eval_net_critic_fighter.parameters(), lr=self.lr, alpha=0.99, eps=1e-08, weight_decay=0, momentum=0, centered=False)
-        # self.actor_optimizer_fighter = torch.optim.RMSprop(self.eval_net_actor_fighter.parameters(), lr=self.lr, alpha=0.99, eps=1e-08, weight_decay=0, momentum=0, centered=False)
 
     def copy_param(self, eval_net, target_net, tau):
         # 将eval网络中的参数复制到target网络中
@@ -326,6 +221,12 @@ class RLFighter:
             self.copy_param(self.eval_net_actor_fighter, self.target_net_actor_fighter, self.tau)
             print('\ntarget_params_replaced\n')
             step_counter_str = '%09d' % self.learn_step_counter
+            critic_path = save_path + '/critic/'
+            actor_path = save_path + '/actor/'
+            if not os.path.exists(critic_path):
+                os.mkdir(critic_path)
+            if not os.path.exists(actor_path):
+                os.mkdir(actor_path)
             torch.save(self.target_net_critic_fighter.state_dict(),
                        save_path + '/critic/model_' + step_counter_str + '.pkl')
             torch.save(self.target_net_actor_fighter.state_dict(),
@@ -334,9 +235,6 @@ class RLFighter:
                 self.pkl_counter += 1
             else:
                 # 删除最旧的模型参数
-                critic_path = os.path.join(save_path, 'critic')
-                actor_path = os.path.join(save_path, 'actor')
-
                 files = os.listdir(critic_path)
                 for file in files:
                     if file.endswith('pkl'):
