@@ -28,7 +28,7 @@ RADAR_NUM = 10  # 雷达频点总数
 # COURSE_NUM = 16
 # ACTION_NUM = COURSE_NUM * ATTACK_IND_NUM
 LEARN_INTERVAL = 100  # 学习间隔（设置为1表示单步更新）
-start_learn_threshold = 1e4  # 当经验池积累5000条数据后才开始训练
+start_learn_threshold = 1000  # 当经验池积累5000条数据后才开始训练
 
 # 清除tensorboard文件
 for file in os.listdir('C:/MaCA/runs/single-4'):
@@ -146,7 +146,8 @@ if __name__ == "__main__":
             # 环境判定完成后（回合完毕），开始学习模型参数
             if env.get_done():
                 # detector_model.learn()
-                batch_indexes = random.sample(range(1e4), BATCH_SIZE)
+                mem_size = blue_fighter_models[0].get_memory_size()
+                batch_indexes = random.sample(range(mem_size), BATCH_SIZE)
                 for y in range(blue_fighter_num):
                     other_agents = [agent for i, agent in enumerate(blue_fighter_models) if i != y]
                     blue_fighter_models[y].learn('model/MADDPG/MADDPG/%d' % y, writer, batch_indexes, other_agents,
@@ -156,9 +157,10 @@ if __name__ == "__main__":
                 break
             # 未达到done但是达到了学习间隔时也学习模型参数
             # 100个step learn一次
-            if (blue_fighter_models[0].get_memory_size() == start_learn_threshold) and (step_cnt % LEARN_INTERVAL == 0):
+            if (blue_fighter_models[0].get_memory_size() > start_learn_threshold) and (step_cnt % LEARN_INTERVAL == 0):
                 # detector_model.learn()
-                batch_indexes = random.sample(range(1e4), BATCH_SIZE)
+                mem_size = blue_fighter_models[0].get_memory_size()
+                batch_indexes = random.sample(range(mem_size), BATCH_SIZE)
                 for y in range(blue_fighter_num):
                     other_agents = [agent for i, agent in enumerate(blue_fighter_models) if i != y]
                     blue_fighter_models[y].learn('model/MADDPG/MADDPG/%d' % y, writer, batch_indexes, other_agents,

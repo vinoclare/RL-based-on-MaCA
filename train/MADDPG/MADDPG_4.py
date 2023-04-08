@@ -261,12 +261,13 @@ class RLFighter:
         self.action_ = self.action_.view(self.action_.size(0), 1, self.action_.size(1))
 
         # 队友action
-        mate_a_batch = []
-        for i in range(self.agent_num - 1):
+        for i in range(9):
             [_, _, _, _, action, _, _, _] = mate_agents[i].memory.sample_replay(batch_indexes)
-            mate_a_batch.append(action)
-        mate_a_batch = torch.tensor(mate_a_batch)
-        mate_a_batch = mate_a_batch.permute(1, 0, 2)
+            if i == 0:
+                mate_a_batch = torch.unsqueeze(action, 1)
+            else:
+                tem_act = torch.unsqueeze(action, 1)
+                mate_a_batch = torch.cat([mate_a_batch, tem_act], 1)
 
         # 敌方action
         other_a_batch = red_replay.sample_replay(batch_indexes)
