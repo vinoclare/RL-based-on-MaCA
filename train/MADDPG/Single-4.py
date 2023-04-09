@@ -14,7 +14,7 @@ from common.Replay3 import Memory
 
 MAP_PATH = 'C:/MaCA/maps/1000_1000_fighter10v10.map'
 
-RENDER = True  # 是否渲染，渲染能加载出实时的训练画面，但是会降低训练速度
+RENDER = False  # 是否渲染，渲染能加载出实时的训练画面，但是会降低训练速度
 MAX_EPOCH = 2000
 BATCH_SIZE = 512
 EPSILON = 0.9  # greedy policy
