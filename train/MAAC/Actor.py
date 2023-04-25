@@ -26,13 +26,8 @@ class NetFighterActor(nn.Module):
             nn.LayerNorm(64),
             nn.Tanh(),
         )
-        self.alive_fc = nn.Sequential(
-            nn.Linear(1, 4),
-            nn.LayerNorm(4),
-            nn.Tanh(),
-        )
         self.feature_fc = nn.Sequential(
-            nn.Linear((25 * 25 * 8 + 64 + 4), 256),
+            nn.Linear((25 * 25 * 8 + 64), 256),
             nn.LayerNorm(256),
             nn.Tanh(),
         )
@@ -40,15 +35,12 @@ class NetFighterActor(nn.Module):
             nn.Linear(256, 4),
         )
 
-    def forward(self, img, info, alive):
+    def forward(self, img, info):
         img_feature = self.conv(img)
         img_feature = img_feature.view(img_feature.size(0), -1)
         img_feature = self.img_layernorm(img_feature)
         info_feature = self.info_fc(info)
-        alive_feature = self.alive_fc(alive)
-        combined = torch.cat((img_feature, info_feature.view(info_feature.size(0), -1),
-                              alive_feature.view(alive_feature.size(0), -1))
-                             , dim=1)
+        combined = torch.cat((img_feature, info_feature.view(info_feature.size(0), -1)), dim=1)
         feature = self.feature_fc(combined)
         decision = self.decision_fc(feature)
         return decision
