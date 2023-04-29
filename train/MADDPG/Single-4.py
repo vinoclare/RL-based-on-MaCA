@@ -14,7 +14,7 @@ from common.Replay3 import Memory
 
 MAP_PATH = 'C:/MaCA/maps/1000_1000_fighter10v10.map'
 
-RENDER = False  # 是否渲染，渲染能加载出实时的训练画面，但是会降低训练速度
+RENDER = True  # 是否渲染，渲染能加载出实时的训练画面，但是会降低训练速度
 MAX_EPOCH = 2000
 BATCH_SIZE = 512
 EPSILON = 0.9  # greedy policy
@@ -29,6 +29,7 @@ RADAR_NUM = 10  # 雷达频点总数
 # ACTION_NUM = COURSE_NUM * ATTACK_IND_NUM
 LEARN_INTERVAL = 100  # 学习间隔（设置为1表示单步更新）
 start_learn_threshold = 1000  # 当经验池积累5000条数据后才开始训练
+MAX_EPOCH_STEP = 3000
 
 # 清除tensorboard文件
 for file in os.listdir('C:/MaCA/runs/single-4'):
@@ -155,6 +156,7 @@ if __name__ == "__main__":
                 writer.add_scalar(tag='blue_epoch_reward', scalar_value=blue_epoch_reward,
                                   global_step=x)
                 break
+
             # 未达到done但是达到了学习间隔时也学习模型参数
             # 100个step learn一次
             if (blue_fighter_models[0].get_memory_size() > start_learn_threshold) and (step_cnt % LEARN_INTERVAL == 0):
@@ -165,6 +167,11 @@ if __name__ == "__main__":
                     other_agents = [agent for i, agent in enumerate(blue_fighter_models) if i != y]
                     blue_fighter_models[y].learn('model/MADDPG/MADDPG/%d' % y, writer, batch_indexes, other_agents,
                                                  red_action_replay)
+
+            if step_cnt > MAX_EPOCH_STEP:
+                writer.add_scalar(tag='blue_epoch_reward', scalar_value=blue_epoch_reward,
+                                  global_step=x)
+                break
 
             step_cnt += 1
             global_step_cnt += 1

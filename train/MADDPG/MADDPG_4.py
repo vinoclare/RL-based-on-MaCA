@@ -26,7 +26,7 @@ class RLFighter:
             e_greedy=0.9,
             replace_target_iter=50,
             max_memory_size=1e4,
-            batch_size=512,
+            batch_size=256,
             e_greedy_increment=None,
             output_graph=False,
             load_state=False,

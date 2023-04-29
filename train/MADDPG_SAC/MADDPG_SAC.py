@@ -183,6 +183,8 @@ class RLFighter:
 
         act2 = torch.tanh(act)
         log_prob = dist.log_prob(act) - torch.log(1 - act2.pow(2) + torch.tensor(1e-7).float())
+        log_prob = log_prob.mean(dim=1)
+        log_prob = torch.unsqueeze(log_prob, 1)
         return action, log_prob
 
     # 针对batch的数据选择行为(使用target_actor网络计算)
@@ -314,5 +316,6 @@ class RLFighter:
         writer.add_scalar(tag='%s_actor_loss' % self.name, scalar_value=actor_loss, global_step=self.learn_step_counter)
         writer.add_scalar(tag='%s_critic_loss' % self.name, scalar_value=critic_loss, global_step=self.learn_step_counter)
         writer.add_scalar(tag='%s_q_loss' % self.name, scalar_value=q_loss, global_step=self.learn_step_counter)
+        writer.add_scalar(tag='%s_value' % self.name, scalar_value=q_eval.mean(), global_step=self.learn_step_counter)
 
         self.learn_step_counter += 1

@@ -1,7 +1,7 @@
 """
 一方为MADDPG,一方为fix-rule-no-attack的训练
 """
-root_path = 'D:/MaCA'
+root_path = 'C:/MaCA'
 
 import sys
 import os
@@ -44,7 +44,7 @@ LEARN_INTERVAL = 100  # 学习间隔（设置为1表示单步更新）
 start_learn_threshold = 1000  # 当经验池积累5000条数据后才开始训练
 
 # 清除tensorboard文件
-runs_path = os.path.join(root_path, 'runs/single-4')
+runs_path = os.path.join(root_path, 'runs/MADDPG_SAC')
 for file in os.listdir(runs_path):
     path = os.path.join(runs_path, file)
     os.remove(path)
@@ -76,7 +76,7 @@ if __name__ == "__main__":
     red_agent.set_map_info(size_x, size_y, blue_detector_num, blue_fighter_num)
 
     global_step_cnt = 0
-    writer = SummaryWriter('runs/single-4')
+    writer = SummaryWriter('runs/MADDPG_SAC')
     red_action_replay = Memory(MAX_MEM_SIZE)
 
     # 训练循环
@@ -158,7 +158,7 @@ if __name__ == "__main__":
 
             for y in range(blue_fighter_num):
                 if not os.path.exists('model/MADDPG_SAC/%d' % y):
-                    os.mkdir('model/MADDPG_SAC/%d' % y)
+                    os.makedirs('model/MADDPG_SAC/%d' % y)
 
             # 环境判定完成后（回合完毕），开始学习模型参数
             if env.get_done():
