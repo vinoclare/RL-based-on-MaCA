@@ -8,25 +8,36 @@ class NetFighterCritic(nn.Module):
 
     def __init__(self):
         super(NetFighterCritic, self).__init__()
-        self.conv = nn.Sequential(  # batch * 100 * 100 * 5
+        self.conv1 = nn.Sequential(  # batch *2 * 100 * 100
             nn.Conv2d(
-                in_channels=5,
-                out_channels=8,
+                in_channels=2,
+                out_channels=4,
                 kernel_size=5,
                 stride=1,
                 padding=2,
             ),
             nn.ReLU(),
-            nn.MaxPool2d(4),
+            nn.MaxPool2d(2),
         )
-        self.img_layernorm = nn.LayerNorm(25 * 25 * 8)
+        self.conv2 = nn.Sequential(  # batch * 4 * 50 * 50
+            nn.Conv2d(
+                in_channels=4,
+                out_channels=6,
+                kernel_size=5,
+                stride=1,
+                padding=2,
+            ),
+            nn.ReLU(),
+            nn.MaxPool2d(2),
+        )  # bacth * 6 * 25 * 25
+        self.img_layernorm = nn.LayerNorm(25 * 25 * 6)
         self.info_fc = nn.Sequential(  # batch * 3
             nn.Linear(3, 64),
             nn.LayerNorm(64),
             nn.ReLU(),
         )
         self.feature_fc = nn.Sequential(  # 25 * 25 * 64 + 256 + 256
-            nn.Linear((25 * 25 * 8 + 64), 256),
+            nn.Linear((25 * 25 * 6 + 64), 256),
             nn.LayerNorm(256),
             nn.ReLU(),
         )
@@ -35,11 +46,12 @@ class NetFighterCritic(nn.Module):
         )
 
     def forward(self, img, info):
-        img_feature = self.conv(img)
-        img_feature = img_feature.view(img_feature.size(0), -1)
-        img_feature = self.img_layernorm(img_feature)
+        img_feature1 = self.conv1(img)
+        img_feature2 = self.conv2(img_feature1)
+        img_feature3 = img_feature2.view(img_feature2.size(0), -1)
+        img_feature4 = self.img_layernorm(img_feature3)
         info_feature = self.info_fc(info)
-        combined = torch.cat((img_feature, info_feature.view(info_feature.size(0), -1)), dim=1)
+        combined = torch.cat((img_feature4, info_feature.view(info_feature.size(0), -1)), dim=1)
         feature = self.feature_fc(combined)
         value = self.decision_fc(feature)
         return value

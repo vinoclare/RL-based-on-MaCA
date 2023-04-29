@@ -1,7 +1,7 @@
 """
 一方为MADDPG,一方为fix-rule-no-attack的训练
 """
-root_path = 'C:/MaCA'
+root_path = 'D:/MaCA'
 
 import sys
 import os
@@ -45,6 +45,8 @@ start_learn_threshold = 1000  # 当经验池积累5000条数据后才开始训�
 
 # 清除tensorboard文件
 runs_path = os.path.join(root_path, 'runs/MADDPG_SAC')
+if not os.path.exists(runs_path):
+    os.makedirs(runs_path)
 for file in os.listdir(runs_path):
     path = os.path.join(runs_path, file)
     os.remove(path)
@@ -55,7 +57,7 @@ if __name__ == "__main__":
 
     # 双方的obs构建模块
     red_agent_obs_ind = red_agent.get_obs_ind()
-    blue_agent_obs_ind = 'MADDPG'
+    blue_agent_obs_ind = 'MADDPG_SAC'
 
     # 创建环境
     os.chdir(root_path)
@@ -92,7 +94,6 @@ if __name__ == "__main__":
                 red_obs_dict, blue_obs_dict = env.get_obs()
             # 获取红色方行动
             red_detector_action, red_fighter_action = red_agent.get_action(red_obs_dict, step_cnt)
-
             # 获取蓝色方行动
             blue_alive = []  # 蓝队全队存活信息
             blue_obs_list = []  # 蓝色方的全体环境观测信息
