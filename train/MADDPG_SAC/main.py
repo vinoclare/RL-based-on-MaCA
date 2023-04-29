@@ -5,9 +5,11 @@ root_path = 'D:/MaCA'
 
 import sys
 import os
+
 sys.path.append(root_path)
 
 import copy
+import math
 import numpy as np
 from agent.fix_rule_no_att.agent import Agent
 from interface import Environment
@@ -18,7 +20,7 @@ from common.Replay3 import Memory
 
 MAP_PATH = os.path.join(root_path, 'maps/1000_1000_fighter10v10.map')
 
-RENDER = False  # 是否渲染，渲染能加载出实时的训练画面，但是会降低训练速度
+RENDER = True  # 是否渲染，渲染能加载出实时的训练画面，但是会降低训练速度
 MAX_EPOCH = 2000
 BATCH_SIZE = 512
 GAMMA = 0.99  # reward discount
@@ -50,6 +52,25 @@ if not os.path.exists(runs_path):
 for file in os.listdir(runs_path):
     path = os.path.join(runs_path, file)
     os.remove(path)
+
+
+def boundary_punish(all_pos, actions):
+    # 对Agent试图越过边界的惩罚
+    ps = []
+    for i, (pos, act) in enumerate(zip(all_pos, actions)):
+        ps.append(0)
+        # 靠近上下边界的情况
+        if pos[1] < 50 or pos[1] > 950:
+            dist = pos[1] if pos[1] < 50 else 1000 - pos[1]  # agent距离边界的距离
+            theta = math.pi / 180 * act  # 弧度
+            ps[i] -= np.abs(math.sin(theta)) * (50 - dist)
+        # 靠近左右边界的情况
+        if pos[0] < 50 or pos[0] > 950:
+            dist = pos[0] if pos[0] < 50 else 1000 - pos[0]  # agent距离边界的距离
+            theta = math.pi / 180 * act  # 弧度
+            ps[i] -= np.abs(math.cos(theta)) * (50 - dist)
+    return ps
+
 
 if __name__ == "__main__":
     # 红色方为fix rule no attack，蓝色方为MADDPG
@@ -97,6 +118,7 @@ if __name__ == "__main__":
             # 获取蓝色方行动
             blue_alive = []  # 蓝队全队存活信息
             blue_obs_list = []  # 蓝色方的全体环境观测信息
+            blue_poses = []  # 蓝队全体位置坐标
             if step_cnt % 50 == 0:  # 50个step内航向保持一致，只更新攻击类型
                 blue_fighter_action = []  # 蓝色方所有agent的行动
                 for y in range(blue_fighter_num):  # 可以不用for循环，直接矩阵计算
@@ -106,6 +128,7 @@ if __name__ == "__main__":
                     tmp_info_obs = blue_obs_dict['fighter'][y]['info']
                     alive = 1 if blue_obs_dict['fighter'][y]['alive'] else 0
                     blue_alive.append(alive)
+                    blue_poses.append(blue_obs_dict['fighter'][y]['pos'])
                     true_action = blue_fighter_models[y].choose_action(tmp_img_obs, tmp_info_obs)
                     blue_obs_list.append({'screen': copy.deepcopy(tmp_img_obs), 'info': copy.deepcopy(tmp_info_obs)})
                     blue_fighter_action.append(true_action)
@@ -118,23 +141,28 @@ if __name__ == "__main__":
                     tmp_info_obs = blue_obs_dict['fighter'][y]['info']
                     alive = 1 if blue_obs_dict['fighter'][y]['alive'] else 0
                     blue_alive.append(alive)
+                    blue_poses.append(blue_obs_dict['fighter'][y]['pos'])
                     true_action = blue_fighter_models[y].choose_action(tmp_img_obs, tmp_info_obs)
                     blue_obs_list.append({'screen': copy.deepcopy(tmp_img_obs), 'info': copy.deepcopy(tmp_info_obs)})
                     blue_fighter_action[y][3] = true_action[3]
 
             # step
-            # blue_fighter_action[0] = np.array([-89, 1, 0, 0])
+            # blue_fighter_action[0] = np.array([180, 1, 0, 0])
             # print(blue_fighter_action[0])
             env.step(red_detector_action, red_fighter_action, blue_detector_action, blue_fighter_action)
+            # print(blue_obs_dict['fighter'][0]['pos'])
 
             # 获取reward
             red_detector_reward, red_fighter_reward, red_game_reward, blue_detector_reward, \
-                blue_fighter_reward, blue_game_reward = env.get_reward()
+            blue_fighter_reward, blue_game_reward = env.get_reward()
             # print('fighter_reward: %s  game_reward: %s' % (blue_fighter_reward, blue_game_reward))
             blue_detector_reward = blue_detector_reward + blue_game_reward
             blue_fighter_reward = blue_fighter_reward + blue_game_reward
             red_detector_reward = red_detector_reward + red_game_reward
             red_fighter_reward = red_fighter_reward + red_game_reward
+
+            blue_boundary_punish = boundary_punish(blue_poses, blue_fighter_action)
+            blue_fighter_reward = blue_fighter_reward + blue_boundary_punish
 
             blue_epoch_reward += np.mean(blue_fighter_reward)
 

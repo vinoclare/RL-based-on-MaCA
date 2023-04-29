@@ -19,6 +19,7 @@ class ObsConstruct:
         detector_img, fighter_img, joint_img = self.__get_img_obs(detector_data_obs_list, fighter_data_obs_list, joint_data_obs_dict)
         detector_data, fighter_data = self.__get_data_obs(detector_data_obs_list, fighter_data_obs_list, joint_data_obs_dict)
         alive_status = self.__get_alive_status(detector_data_obs_list, fighter_data_obs_list)
+        fighter_pos = self.__get_fighter_position(fighter_data_obs_list)
 
         # detector
         for x in range(self.detector_num):
@@ -32,11 +33,21 @@ class ObsConstruct:
             img_context = fighter_img[x, :, :, :]
             img_context = np.concatenate((img_context, joint_img[0, :, :, :]), axis=2)
             data_context = fighter_data[x, :]
+            pos_context = fighter_pos[x]
             fighter_obs_list.append({'info': copy.deepcopy(data_context), 'screen': copy.deepcopy(img_context),
-                             'alive': alive_status[x + self.detector_num][0]})
+                                     'alive': alive_status[x + self.detector_num][0], 'pos': copy.deepcopy(pos_context)})
         obs_dict['detector'] = detector_obs_list
         obs_dict['fighter'] = fighter_obs_list
         return obs_dict
+
+    def __get_fighter_position(self, fighter_data_obs_list):
+        tmp_pos = []
+        for x in range(self.fighter_num):
+            if not fighter_data_obs_list[x]['alive']:
+                tmp_pos.append([0, 0])
+            else:
+                tmp_pos.append([fighter_data_obs_list[x]['pos_x'], fighter_data_obs_list[x]['pos_y']])
+        return tmp_pos
 
     def __get_alive_status(self,detector_data_obs_list,fighter_data_obs_list):
         # 获取fighter与detector的存活信息
