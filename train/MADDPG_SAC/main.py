@@ -1,12 +1,14 @@
 """
 一方为MADDPG,一方为fix-rule-no-attack的训练
 """
-root_path = 'D:/MaCA'
-
 import sys
 import os
 
+root_path = 'C:/MaCA'
+env_path = os.path.join(root_path, 'environment')
+
 sys.path.append(root_path)
+sys.path.append(env_path)
 
 import copy
 import math
@@ -21,11 +23,13 @@ from common.Replay3 import Memory
 MAP_PATH = os.path.join(root_path, 'maps/1000_1000_fighter10v10.map')
 
 RENDER = True  # 是否渲染，渲染能加载出实时的训练画面，但是会降低训练速度
-MAX_EPOCH = 2000
+MAX_EPOCH = 150
 BATCH_SIZE = 512
 GAMMA = 0.99  # reward discount
 TAU = 0.99
+BETA = 0.01  # 边界惩罚discount
 replace_target_iter = 50
+MAX_STEP = 1540
 
 # 网络学习率
 actor_lr = 3e-4
@@ -36,14 +40,14 @@ TARGET_REPLACE_ITER = 100  # target update frequency
 
 DETECTOR_NUM = 0
 FIGHTER_NUM = 10
-MAX_MEM_SIZE = 1e4  # 经验回放池最大容量
+MAX_MEM_SIZE = 3e4  # 经验回放池最大容量
 ATTACK_IND_NUM = (DETECTOR_NUM + FIGHTER_NUM) * 2 + 1  # 导弹攻击类型数量（不攻击+中程导弹攻击目标+远程导弹攻击目标）
 RADAR_NUM = 10  # 雷达频点总数
 
 # COURSE_NUM = 16
 # ACTION_NUM = COURSE_NUM * ATTACK_IND_NUM
 LEARN_INTERVAL = 100  # 学习间隔（设置为1表示单步更新）
-start_learn_threshold = 1000  # 当经验池积累5000条数据后才开始训练
+start_learn_threshold = 1000  # 当经验池积累1000条数据后才开始训练
 
 # 清除tensorboard文件
 runs_path = os.path.join(root_path, 'runs/MADDPG_SAC')
@@ -62,12 +66,12 @@ def boundary_punish(all_pos, actions):
         # 靠近上下边界的情况
         if pos[1] < 50 or pos[1] > 950:
             dist = pos[1] if pos[1] < 50 else 1000 - pos[1]  # agent距离边界的距离
-            theta = math.pi / 180 * act  # 弧度
+            theta = math.pi / 180 * act[0]  # 弧度
             ps[i] -= np.abs(math.sin(theta)) * (50 - dist)
         # 靠近左右边界的情况
         if pos[0] < 50 or pos[0] > 950:
             dist = pos[0] if pos[0] < 50 else 1000 - pos[0]  # agent距离边界的距离
-            theta = math.pi / 180 * act  # 弧度
+            theta = math.pi / 180 * act[0]  # 弧度
             ps[i] -= np.abs(math.cos(theta)) * (50 - dist)
     return ps
 
@@ -162,7 +166,9 @@ if __name__ == "__main__":
             red_fighter_reward = red_fighter_reward + red_game_reward
 
             blue_boundary_punish = boundary_punish(blue_poses, blue_fighter_action)
+            blue_boundary_punish = [BETA * i for i in blue_boundary_punish]
             blue_fighter_reward = blue_fighter_reward + blue_boundary_punish
+            print(blue_boundary_punish)
 
             blue_epoch_reward += np.mean(blue_fighter_reward)
 
@@ -211,6 +217,12 @@ if __name__ == "__main__":
                     other_agents = [agent for i, agent in enumerate(blue_fighter_models) if i != y]
                     blue_fighter_models[y].learn('model/MADDPG_SAC/%d' % y, writer, batch_indexes, other_agents,
                                                  red_action_replay)
+
+            # 当达到一个epoch最大步数，强制进入下一个epoch
+            if step_cnt > MAX_STEP:
+                writer.add_scalar(tag='blue_epoch_reward', scalar_value=blue_epoch_reward,
+                                  global_step=x)
+                break
 
             step_cnt += 1
             global_step_cnt += 1
