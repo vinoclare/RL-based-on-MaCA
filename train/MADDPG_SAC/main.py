@@ -22,21 +22,21 @@ from common.Replay3 import Memory
 
 MAP_PATH = os.path.join(root_path, 'maps/1000_1000_fighter10v10.map')
 
-RENDER = True  # 是否渲染，渲染能加载出实时的训练画面，但是会降低训练速度
+RENDER = False  # 是否渲染，渲染能加载出实时的训练画面，但是会降低训练速度
 MAX_EPOCH = 150
 BATCH_SIZE = 512
 GAMMA = 0.99  # reward discount
 TAU = 0.99
-BETA = 0.01  # 边界惩罚discount
+BETA = 0  # 边界惩罚discount
 replace_target_iter = 50
-MAX_STEP = 1540
+MAX_STEP = 1500
+LEARN_INTERVAL = 200  # 学习间隔
+start_learn_threshold = 1000  # 当经验池积累1000条数据后才开始训练
 
 # 网络学习率
 actor_lr = 3e-4
 critic_lr = 3e-4
 q_lr = 3e-4
-
-TARGET_REPLACE_ITER = 100  # target update frequency
 
 DETECTOR_NUM = 0
 FIGHTER_NUM = 10
@@ -46,8 +46,6 @@ RADAR_NUM = 10  # 雷达频点总数
 
 # COURSE_NUM = 16
 # ACTION_NUM = COURSE_NUM * ATTACK_IND_NUM
-LEARN_INTERVAL = 100  # 学习间隔（设置为1表示单步更新）
-start_learn_threshold = 1000  # 当经验池积累1000条数据后才开始训练
 
 # 清除tensorboard文件
 runs_path = os.path.join(root_path, 'runs/MADDPG_SAC')
@@ -167,8 +165,7 @@ if __name__ == "__main__":
 
             blue_boundary_punish = boundary_punish(blue_poses, blue_fighter_action)
             blue_boundary_punish = [BETA * i for i in blue_boundary_punish]
-            blue_fighter_reward = blue_fighter_reward + blue_boundary_punish
-            print(blue_boundary_punish)
+            blue_fighter_reward2 = blue_fighter_reward + blue_boundary_punish
 
             blue_epoch_reward += np.mean(blue_fighter_reward)
 
@@ -189,7 +186,7 @@ if __name__ == "__main__":
                 self_action = blue_fighter_action[y]
                 blue_obs_list_ = {'screen': copy.deepcopy(tmp_img_obs), 'info': copy.deepcopy(tmp_info_obs)}
                 blue_fighter_models[y].store_replay(blue_obs_list[y], blue_alive[y], alive_, self_action,
-                                                    blue_fighter_reward[y], blue_obs_list_)
+                                                    blue_fighter_reward2[y], blue_obs_list_)
 
             for y in range(blue_fighter_num):
                 if not os.path.exists('model/MADDPG_SAC/%d' % y):
@@ -204,7 +201,7 @@ if __name__ == "__main__":
                     other_agents = [agent for i, agent in enumerate(blue_fighter_models) if i != y]
                     blue_fighter_models[y].learn('model/MADDPG_SAC/%d' % y, writer, batch_indexes, other_agents,
                                                  red_action_replay)
-                writer.add_scalar(tag='blue_epoch_reward', scalar_value=blue_epoch_reward,
+                writer.add_scalar(tag='blue_avg_epoch_reward', scalar_value=blue_epoch_reward/step_cnt,
                                   global_step=x)
                 break
             # 未达到done但是达到了学习间隔时也学习模型参数
@@ -220,7 +217,7 @@ if __name__ == "__main__":
 
             # 当达到一个epoch最大步数，强制进入下一个epoch
             if step_cnt > MAX_STEP:
-                writer.add_scalar(tag='blue_epoch_reward', scalar_value=blue_epoch_reward,
+                writer.add_scalar(tag='blue_avg_epoch_reward', scalar_value=blue_epoch_reward/step_cnt,
                                   global_step=x)
                 break
 
