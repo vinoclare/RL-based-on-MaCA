@@ -11,11 +11,12 @@ import torch
 
 class Replay(object):
     def __init__(self, s_screen, s_info, alive, self_act,
-                 r, s__screen, s__info):
+                 pos, r, s__screen, s__info):
         self.s_screen = s_screen  # 当前screen信息
         self.s_info = s_info  # 当前info信息
         self.alive = alive  # 当前时刻存活信息
         self.s_act = self_act  # 自身的action
+        self.pos = pos  # 自身位置
         self.r = r  # reward
         self.s__screen = s__screen  # 下一步screen信息
         self.s__info = s__info  # 下一步info信息
@@ -31,6 +32,9 @@ class Replay(object):
 
     def get_s_act(self):
         return self.s_act
+
+    def get_pos(self):
+        return  self.pos
 
     def get_r(self):
         return self.r
@@ -48,10 +52,10 @@ class Memory(object):
         self.memory_counter = 0  # 当前memory大小
         self.max_memory_size = max_memory_size  # memory容量
 
-    def store_replay(self, s, alive, sa, r, s_):
+    def store_replay(self, s, alive, sa, pos, r, s_):
         # 将每一step的经验加入经验池
         # 经验池未满时正常加入经验
-        replay = Replay(s['screen'], s['info'], alive, sa, r, s_['screen'], s_['info'])
+        replay = Replay(s['screen'], s['info'], alive, sa, pos, r, s_['screen'], s_['info'])
         if self.memory_counter < self.max_memory_size:
             self.data.append(replay)
             self.memory_counter += 1
@@ -125,6 +129,7 @@ class Memory(object):
         s_info_batch = []
         alive_batch = []
         self_a_batch = []
+        pos_batch = []
         r_batch = []
         s__screen_batch = []
         s__info_batch = []
@@ -134,6 +139,7 @@ class Memory(object):
             s_info_batch.append(replay.get_s_info())
             alive_batch.append(replay.get_alive())
             self_a_batch.append(replay.get_s_act())
+            pos_batch.append(replay.get_pos())
             r_batch.append(replay.get_r())
             s__screen_batch.append(replay.get_s__screen())
             s__info_batch.append(replay.get_s__info())
@@ -142,11 +148,13 @@ class Memory(object):
         s_info_batch = torch.FloatTensor(np.array(s_info_batch)).cuda()
         alive_batch = torch.FloatTensor(np.array(alive_batch)).cuda()
         self_a_batch = torch.FloatTensor(np.array(self_a_batch)).cuda()
+        pos_batch = torch.FloatTensor(np.array(pos_batch)).cuda()
         r_batch = torch.FloatTensor(np.array(r_batch)).cuda()
         s__screen_batch = torch.FloatTensor(np.array(s__screen_batch)).cuda()
         s__info_batch = torch.FloatTensor(np.array(s__info_batch)).cuda()
+        pos_batch = pos_batch.view(-1, 2)
         alive_batch = alive_batch.view(-1, 1)
         r_batch = r_batch.view(-1, 1)
 
         return [s_screen_batch, s_info_batch, alive_batch, self_a_batch,
-                r_batch, s__screen_batch, s__info_batch]
+                pos_batch, r_batch, s__screen_batch, s__info_batch]

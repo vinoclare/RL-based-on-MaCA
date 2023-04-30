@@ -27,7 +27,7 @@ class ObsConstruct:
             img_context = np.concatenate((img_context, joint_img[0, :, :, :]), axis=2)
             data_context = detector_data[x, :]
             detector_obs_list.append({'info': copy.deepcopy(data_context), 'screen': copy.deepcopy(img_context),
-                             'alive': alive_status[x][0]})
+                                      'alive': alive_status[x][0]})
         # fighter
         for x in range(self.fighter_num):
             img_context = fighter_img[x, :, :, :]
@@ -61,7 +61,6 @@ class ObsConstruct:
         return alive_status
 
     def __get_img_obs(self, detector_data_obs_list, fighter_data_obs_list, joint_data_obs_dict):
-        # 视野范围
         img_obs_size_x = int(self.battlefield_size_y / self.img_obs_reduce_ratio)
         img_obs_size_y = int(self.battlefield_size_x / self.img_obs_reduce_ratio)
         # 初始化img（1 channels）
@@ -152,7 +151,7 @@ class ObsConstruct:
         # fighter
         for x in range(self.fighter_num):
             for y in range(len(fighter_data_obs_list[x]['r_visible_list'])):
-                # 往channel 2中填充能够观测到的信息
+                # 往channel 1中填充能够观测到的信息
                 self.__set_value_in_img(joint_img[0, :, :, 0],
                                         int(fighter_data_obs_list[x]['r_visible_list'][y][
                                                 'pos_y'] / self.img_obs_reduce_ratio),

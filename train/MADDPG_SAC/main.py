@@ -4,7 +4,7 @@
 import sys
 import os
 
-root_path = 'D:/MaCA'
+root_path = 'C:/MaCA'
 env_path = os.path.join(root_path, 'environment')
 
 sys.path.append(root_path)
@@ -22,7 +22,7 @@ from common.Replay3 import Memory
 
 MAP_PATH = os.path.join(root_path, 'maps/1000_1000_fighter10v10.map')
 
-RENDER = False  # 是否渲染，渲染能加载出实时的训练画面，但是会降低训练速度
+RENDER = True  # 是否渲染，渲染能加载出实时的训练画面，但是会降低训练速度
 MAX_EPOCH = 150
 BATCH_SIZE = 512
 GAMMA = 0.99  # reward discount
@@ -179,8 +179,12 @@ if __name__ == "__main__":
             # 红色方agent位置
             red_poses = []
             for i in range(FIGHTER_NUM):
-                red_poses.append(red_obs_dict['fighter_obs_list'][i]['pos_x'])
-                red_poses.append(red_obs_dict['fighter_obs_list'][i]['pos_y'])
+                if red_obs_dict['fighter_obs_list'][i]['alive']:
+                    red_poses.append(red_obs_dict['fighter_obs_list'][i]['pos_x'])
+                    red_poses.append(red_obs_dict['fighter_obs_list'][i]['pos_y'])
+                else:
+                    red_poses.append(0)
+                    red_poses.append(0)
 
             # 保存红色方经验
             red_action_replay.store_replay(red_fighter_action2, red_poses)
@@ -194,7 +198,7 @@ if __name__ == "__main__":
                 self_action = blue_fighter_action[y]
                 blue_obs_list_ = {'screen': copy.deepcopy(tmp_img_obs), 'info': copy.deepcopy(tmp_info_obs)}
                 blue_fighter_models[y].store_replay(blue_obs_list[y], blue_alive[y], self_action,
-                                                    blue_fighter_reward2[y], blue_obs_list_)
+                                                    blue_poses[y], blue_fighter_reward2[y], blue_obs_list_)
 
             for y in range(blue_fighter_num):
                 if not os.path.exists('model/MADDPG_SAC/%d' % y):

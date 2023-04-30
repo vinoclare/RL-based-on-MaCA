@@ -36,13 +36,18 @@ class NetFighterQ(nn.Module):
             nn.LayerNorm(64),
             nn.ReLU(),
         )
+        self.pos_fc = nn.Sequential(  # batch * 40
+            nn.Linear(40, 64),
+            nn.LayerNorm(64),
+            nn.ReLU(),
+        )
         self.action_fc = nn.Sequential(  # batch * (4 * agent_num)
             nn.Linear(4 * agent_num, 128),
             nn.LayerNorm(128),
             nn.ReLU(),
         )
-        self.feature_fc = nn.Sequential(  # 25 * 25 * 64 + 256 + 256
-            nn.Linear((25 * 25 * 6 + 64 + 128), 256),
+        self.feature_fc = nn.Sequential(
+            nn.Linear((25 * 25 * 6 + 64 + 64 + 128), 256),
             nn.LayerNorm(256),
             nn.ReLU(),
         )
@@ -50,15 +55,17 @@ class NetFighterQ(nn.Module):
             nn.Linear(256, 1),
         )
 
-    def forward(self, img, info, act):
+    def forward(self, img, info, act, pos):
         img_feature1 = self.conv1(img)
         img_feature2 = self.conv2(img_feature1)
         img_feature3 = img_feature2.view(img_feature2.size(0), -1)
         img_feature4 = self.img_layernorm(img_feature3)
         info_feature = self.info_fc(info)
+        pos_feature = self.pos_fc(pos)
         action_feature = self.action_fc(act)
         combined = torch.cat((img_feature4, info_feature.view(info_feature.size(0), -1),
-                              action_feature.view(action_feature.size(0), -1)),
+                              action_feature.view(action_feature.size(0), -1),
+                              pos_feature.view(pos_feature.size(0), -1)),
                              dim=1)
         feature = self.feature_fc(combined)
         q = self.decision_fc(feature)

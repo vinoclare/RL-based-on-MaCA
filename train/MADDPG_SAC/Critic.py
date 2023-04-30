@@ -36,8 +36,13 @@ class NetFighterCritic(nn.Module):
             nn.LayerNorm(64),
             nn.ReLU(),
         )
-        self.feature_fc = nn.Sequential(  # 25 * 25 * 64 + 256 + 256
-            nn.Linear((25 * 25 * 6 + 64), 256),
+        self.pos_fc = nn.Sequential(  # batch * 40
+            nn.Linear(40, 64),
+            nn.LayerNorm(64),
+            nn.ReLU(),
+        )
+        self.feature_fc = nn.Sequential(
+            nn.Linear((25 * 25 * 6 + 64 + 64), 256),
             nn.LayerNorm(256),
             nn.ReLU(),
         )
@@ -45,13 +50,15 @@ class NetFighterCritic(nn.Module):
             nn.Linear(256, 1),
         )
 
-    def forward(self, img, info):
+    def forward(self, img, info, pos):
         img_feature1 = self.conv1(img)
         img_feature2 = self.conv2(img_feature1)
         img_feature3 = img_feature2.view(img_feature2.size(0), -1)
         img_feature4 = self.img_layernorm(img_feature3)
         info_feature = self.info_fc(info)
-        combined = torch.cat((img_feature4, info_feature.view(info_feature.size(0), -1)), dim=1)
+        pos_feature = self.pos_fc(pos)
+        combined = torch.cat((img_feature4, info_feature.view(info_feature.size(0), -1),
+                              pos_feature.view(pos_feature.size(0), -1)), dim=1)
         feature = self.feature_fc(combined)
         value = self.decision_fc(feature)
         return value
