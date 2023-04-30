@@ -104,9 +104,9 @@ class RLFighter:
             tem_dict[param_tensor] = tem_value
         target_net.load_state_dict(tem_dict)
 
-    def store_replay(self, s, alive, alive_, a, r, s_):
+    def store_replay(self, s, alive, a, r, s_):
         # 将每一step的经验加入经验池
-        self.memory.store_replay(s, alive, alive_, a, r, s_)
+        self.memory.store_replay(s, alive, a, r, s_)
 
     def get_memory_size(self):
         return self.memory.get_size()
@@ -253,7 +253,7 @@ class RLFighter:
             #            break
 
         # 采样Replay
-        [s_screen_batch, s_info_batch, alive_batch, alive__batch, self_a_batch,
+        [s_screen_batch, s_info_batch, alive_batch, self_a_batch,
          r_batch, s__screen_batch, s__info_batch] = self.memory.sample_replay(batch_indexes)
 
         self.critic_optimizer_fighter.zero_grad()
@@ -264,25 +264,28 @@ class RLFighter:
         self.action, log_probs = self.choose_action_batch(s_screen_batch, s_info_batch)
         self.action = self.action.view(self.action.size(0), 1, self.action.size(1))
 
-        # 队友action
+        # 队友action、screen
         for i in range(9):
-            [_, _, _, _, action, _, _, _] = mate_agents[i].memory.sample_replay(batch_indexes)
+            [s_screen_batch, _, _, action, _, _, _] = mate_agents[i].memory.sample_replay(batch_indexes)
             if i == 0:
                 mate_a_batch = torch.unsqueeze(action, 1)
+                mate_screen_batch = s_screen_batch
             else:
                 tem_act = torch.unsqueeze(action, 1)
                 mate_a_batch = torch.cat([mate_a_batch, tem_act], 1)
 
-        # 敌方action
-        other_a_batch = red_replay.sample_replay(batch_indexes)
+                mate_screen_batch = torch.cat([mate_screen_batch, s_screen_batch], 1)
+
+        # 敌方action、pos
+        enemy_a_batch, enemy_pos_batch = red_replay.sample_replay(batch_indexes)
 
         # 双方全部的action
         self_a_batch = torch.unsqueeze(self_a_batch, 1)
-        all_action = torch.cat([self.action, mate_a_batch, other_a_batch], 1).view(mate_a_batch.size(0), -1)
+        all_action = torch.cat([self.action, mate_a_batch, enemy_a_batch], 1).view(mate_a_batch.size(0), -1)
         if self.gpu_enable:
             all_action = all_action.cuda()
         all_action = all_action.float()
-        q_eval = self.eval_net_critic_fighter(s_screen_batch, s_info_batch)
+        q_eval = self.Q_net_fighter(s_screen_batch, s_info_batch, self_a_batch)
         q_next = self.target_net_critic_fighter(s__screen_batch, s__info_batch).detach()  # detach使tensor不能反向传播
         q_target = r_batch + alive_batch * self.gamma * q_next.view(-1, 1)  # shape (batch, 1)
 

@@ -4,7 +4,7 @@
 import sys
 import os
 
-root_path = 'C:/MaCA'
+root_path = 'D:/MaCA'
 env_path = os.path.join(root_path, 'environment')
 
 sys.path.append(root_path)
@@ -29,8 +29,8 @@ GAMMA = 0.99  # reward discount
 TAU = 0.99
 BETA = 0  # 边界惩罚discount
 replace_target_iter = 50
-MAX_STEP = 1500
-LEARN_INTERVAL = 200  # 学习间隔
+MAX_STEP = 1540
+LEARN_INTERVAL = 100  # 学习间隔（设置为1表示单步更新）
 start_learn_threshold = 1000  # 当经验池积累1000条数据后才开始训练
 
 # 网络学习率
@@ -117,6 +117,7 @@ if __name__ == "__main__":
                 red_obs_dict, blue_obs_dict = env.get_obs()
             # 获取红色方行动
             red_detector_action, red_fighter_action = red_agent.get_action(red_obs_dict, step_cnt)
+
             # 获取蓝色方行动
             blue_alive = []  # 蓝队全队存活信息
             blue_obs_list = []  # 蓝色方的全体环境观测信息
@@ -174,7 +175,15 @@ if __name__ == "__main__":
             for action in red_fighter_action:
                 tem_action = [action['course'], action['r_fre_point'], action['j_fre_point'], action['hit_target']]
                 red_fighter_action2.append(tem_action)
-            red_action_replay.store_replay(red_fighter_action2)
+
+            # 红色方agent位置
+            red_poses = []
+            for i in range(FIGHTER_NUM):
+                red_poses.append(red_obs_dict['fighter_obs_list'][i]['pos_x'])
+                red_poses.append(red_obs_dict['fighter_obs_list'][i]['pos_y'])
+
+            # 保存红色方经验
+            red_action_replay.store_replay(red_fighter_action2, red_poses)
 
             # 保存replay
             red_obs_dict, blue_obs_dict = env.get_obs()
@@ -182,10 +191,9 @@ if __name__ == "__main__":
                 tmp_img_obs = blue_obs_dict['fighter'][y]['screen']
                 tmp_img_obs = tmp_img_obs.transpose(2, 0, 1)
                 tmp_info_obs = blue_obs_dict['fighter'][y]['info']
-                alive_ = int(blue_obs_dict['fighter'][y]['alive'])
                 self_action = blue_fighter_action[y]
                 blue_obs_list_ = {'screen': copy.deepcopy(tmp_img_obs), 'info': copy.deepcopy(tmp_info_obs)}
-                blue_fighter_models[y].store_replay(blue_obs_list[y], blue_alive[y], alive_, self_action,
+                blue_fighter_models[y].store_replay(blue_obs_list[y], blue_alive[y], self_action,
                                                     blue_fighter_reward2[y], blue_obs_list_)
 
             for y in range(blue_fighter_num):
