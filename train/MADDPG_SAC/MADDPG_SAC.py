@@ -102,9 +102,9 @@ class RLFighter:
             tem_dict[param_tensor] = tem_value
         target_net.load_state_dict(tem_dict)
 
-    def store_replay(self, s, alive, a, r, s_):
+    def store_replay(self, s, alive, a, r, s_, d):
         # 将每一step的经验加入经验池
-        self.memory.store_replay(s, alive, a, r, s_)
+        self.memory.store_replay(s, alive, a, r, s_, d)
 
     def get_memory_size(self):
         return self.memory.get_size()
@@ -122,7 +122,7 @@ class RLFighter:
         log_stds = log_stds.cpu()
         stds = torch.exp(log_stds)
         dist = Normal(means, stds)
-        act = dist.sample()
+        act = dist.rsample()
         course = torch.tanh(act[:, 0]) * 180
         try:
             # 航向
@@ -158,7 +158,7 @@ class RLFighter:
         means, log_stds = self.policy_net_fighter(img_obs_batch, info_obs_batch)
         stds = torch.exp(log_stds)
         dist = Normal(means, stds)
-        act = dist.sample()
+        act = dist.rsample()
         # 航向
         course = torch.tanh(act[:, 0]) * 180
 
@@ -185,39 +185,7 @@ class RLFighter:
         log_prob = torch.unsqueeze(log_prob, 1)
         return action, log_prob
 
-    # 针对batch的数据选择行为(使用target_actor网络计算)
-    # def choose_action_batch_tar(self, img_obs_batch, info_obs_batch):
-    #     noise = torch.randn(self.batch_size, 1) * self.noise_rate
-    #     if self.gpu_enable:
-    #         img_obs_batch = img_obs_batch.cuda()
-    #         info_obs_batch = info_obs_batch.cuda()
-    #         noise = noise.cuda()
-    #
-    #     means, log_stds = self.policy_net_fighter(img_obs_batch, info_obs_batch)
-    #     stds = torch.exp(log_stds)
-    #     dist = Normal(means, stds)
-    #     act = dist.sample()
-    #     # 航向
-    #     course = torch.tanh(act[:, 0]) * 180
-    #
-    #     # 雷达
-    #     radar = 1 / (1 + torch.exp(-act[:, 1])) * self.radar_num
-    #
-    #     # 干扰
-    #     disturb = 1 / (1 + torch.exp(-act[:, 2])) * (self.radar_num + 1)
-    #
-    #     # 攻击
-    #     attack = 1 / (1 + torch.exp(-act[:, 3])) * self.attack_num
-    #
-    #     # course = course + noise
-    #     course = torch.unsqueeze(course, 1)
-    #     radar = torch.unsqueeze(radar, 1)
-    #     disturb = torch.unsqueeze(disturb, 1)
-    #     attack = torch.unsqueeze(attack, 1)
-    #     action = torch.cat([course, radar, disturb, attack], 1)
-    #     return action
-
-    def learn(self, save_path, writer, batch_indexes, mate_agents, red_replay, done=0):
+    def learn(self, save_path, writer, batch_indexes, mate_agents, red_replay):
         # 复制参数+保存参数
         # learn50次复制/保存一次参数
         if self.learn_step_counter % self.replace_target_iter == 0:
@@ -251,11 +219,11 @@ class RLFighter:
 
         # 采样Replay
         [s_screen_batch, s_info_batch, alive_batch, self_a_batch,
-         r_batch, s__screen_batch, s__info_batch] = self.memory.sample_replay(batch_indexes)
+         r_batch, s__screen_batch, s__info_batch, done_batch] = self.memory.sample_replay(batch_indexes)
 
         # 队友action
         for i in range(9):
-            [_, _, _, action, _, _, _] = mate_agents[i].memory.sample_replay(batch_indexes)
+            [_, _, _, action, _, _, _, _] = mate_agents[i].memory.sample_replay(batch_indexes)
             if i == 0:
                 mate_a_batch = torch.unsqueeze(action, 1)
             else:
@@ -277,7 +245,7 @@ class RLFighter:
             all_mem_action = torch.cat([self_a_batch, mate_a_batch, other_a_batch], 1).view(mate_a_batch.size(0), -1)
             q1_next, q2_next = self.target_net_critic_fighter(s__screen_batch, s__info_batch, all_action_)
             q_target = torch.min(q1_next, q2_next) - self.alpha * log_probs_
-            q_target = r_batch + alive_batch * self.gamma * (1 - done) * q_target
+            q_target = r_batch + alive_batch * self.gamma * q_target * (1 - done_batch)
         q1_cur, q2_cur = self.eval_net_critic_fighter(s_screen_batch, s_info_batch, all_mem_action)
 
         critic_loss = self.loss_func(q1_cur, q_target) + self.loss_func(q2_cur, q_target)
@@ -296,9 +264,6 @@ class RLFighter:
         actor_loss.backward()
         # nn.utils.clip_grad_norm_(self.eval_net_critic_fighter.parameters(), 0.5)
         self.policy_optimizer_fighter.step()
-
-        print("learn_step: %d, %s_critic_loss: %.4f, %s_actor_loss: %.4f, mean_reward: %.2f" % (
-            self.learn_step_counter, self.name, critic_loss, self.name, actor_loss, torch.mean(r_batch)))
 
         # 训练过程保存
         writer.add_scalar(tag='%s_actor_loss' % self.name, scalar_value=actor_loss, global_step=self.learn_step_counter)
