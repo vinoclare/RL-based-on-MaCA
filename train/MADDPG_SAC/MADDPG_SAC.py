@@ -104,9 +104,9 @@ class RLFighter:
             tem_dict[param_tensor] = tem_value
         target_net.load_state_dict(tem_dict)
 
-    def store_replay(self, s, alive, alive_, a, r, s_):
+    def store_replay(self, s, alive, a, r, s_):
         # 将每一step的经验加入经验池
-        self.memory.store_replay(s, alive, alive_, a, r, s_)
+        self.memory.store_replay(s, alive, a, r, s_)
 
     def get_memory_size(self):
         return self.memory.get_size()
@@ -253,7 +253,7 @@ class RLFighter:
             #            break
 
         # 采样Replay
-        [s_screen_batch, s_info_batch, alive_batch, alive__batch, self_a_batch,
+        [s_screen_batch, s_info_batch, alive_batch, self_a_batch,
          r_batch, s__screen_batch, s__info_batch] = self.memory.sample_replay(batch_indexes)
 
         self.critic_optimizer_fighter.zero_grad()
@@ -266,7 +266,7 @@ class RLFighter:
 
         # 队友action
         for i in range(9):
-            [_, _, _, _, action, _, _, _] = mate_agents[i].memory.sample_replay(batch_indexes)
+            [_, _, _, action, _, _, _] = mate_agents[i].memory.sample_replay(batch_indexes)
             if i == 0:
                 mate_a_batch = torch.unsqueeze(action, 1)
             else:

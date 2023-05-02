@@ -1,13 +1,17 @@
 """
 一方为MADDPG,一方为fix-rule-no-attack的训练
 """
-root_path = 'D:/MaCA'
-
 import sys
 import os
+
+root_path = 'C:/MaCA'
+env_path = os.path.join(root_path, 'environment')
+
 sys.path.append(root_path)
+sys.path.append(env_path)
 
 import copy
+import math
 import numpy as np
 from agent.fix_rule_no_att.agent import Agent
 from interface import Environment
@@ -18,19 +22,21 @@ from common.Replay3 import Memory
 
 MAP_PATH = os.path.join(root_path, 'maps/1000_1000_fighter10v10.map')
 
-RENDER = False  # 是否渲染，渲染能加载出实时的训练画面，但是会降低训练速度
-MAX_EPOCH = 2000
+RENDER = True  # 是否渲染，渲染能加载出实时的训练画面，但是会降低训练速度
+MAX_EPOCH = 150
 BATCH_SIZE = 512
 GAMMA = 0.99  # reward discount
 TAU = 0.99
+BETA = 0  # 边界惩罚discount
 replace_target_iter = 50
+MAX_STEP = 1540
+LEARN_INTERVAL = 100  # 学习间隔（设置为1表示单步更新）
+start_learn_threshold = 1000  # 当经验池积累1000条数据后才开始训练
 
 # 网络学习率
 actor_lr = 3e-4
 critic_lr = 3e-4
 q_lr = 3e-4
-
-TARGET_REPLACE_ITER = 100  # target update frequency
 
 DETECTOR_NUM = 0
 FIGHTER_NUM = 10
@@ -40,8 +46,6 @@ RADAR_NUM = 10  # 雷达频点总数
 
 # COURSE_NUM = 16
 # ACTION_NUM = COURSE_NUM * ATTACK_IND_NUM
-LEARN_INTERVAL = 100  # 学习间隔（设置为1表示单步更新）
-start_learn_threshold = 1000  # 当经验池积累5000条数据后才开始训练
 
 # 清除tensorboard文件
 runs_path = os.path.join(root_path, 'runs/MADDPG_SAC')
@@ -50,6 +54,25 @@ if not os.path.exists(runs_path):
 for file in os.listdir(runs_path):
     path = os.path.join(runs_path, file)
     os.remove(path)
+
+
+def boundary_punish(all_pos, actions):
+    # 对Agent试图越过边界的惩罚
+    ps = []
+    for i, (pos, act) in enumerate(zip(all_pos, actions)):
+        ps.append(0)
+        # 靠近上下边界的情况
+        if pos[1] < 50 or pos[1] > 950:
+            dist = pos[1] if pos[1] < 50 else 1000 - pos[1]  # agent距离边界的距离
+            theta = math.pi / 180 * act[0]  # 弧度
+            ps[i] -= np.abs(math.sin(theta)) * (50 - dist)
+        # 靠近左右边界的情况
+        if pos[0] < 50 or pos[0] > 950:
+            dist = pos[0] if pos[0] < 50 else 1000 - pos[0]  # agent距离边界的距离
+            theta = math.pi / 180 * act[0]  # 弧度
+            ps[i] -= np.abs(math.cos(theta)) * (50 - dist)
+    return ps
+
 
 if __name__ == "__main__":
     # 红色方为fix rule no attack，蓝色方为MADDPG
@@ -94,9 +117,11 @@ if __name__ == "__main__":
                 red_obs_dict, blue_obs_dict = env.get_obs()
             # 获取红色方行动
             red_detector_action, red_fighter_action = red_agent.get_action(red_obs_dict, step_cnt)
+
             # 获取蓝色方行动
             blue_alive = []  # 蓝队全队存活信息
             blue_obs_list = []  # 蓝色方的全体环境观测信息
+            # blue_poses = []  # 蓝队全体位置坐标
             if step_cnt % 50 == 0:  # 50个step内航向保持一致，只更新攻击类型
                 blue_fighter_action = []  # 蓝色方所有agent的行动
                 for y in range(blue_fighter_num):  # 可以不用for循环，直接矩阵计算
@@ -106,6 +131,7 @@ if __name__ == "__main__":
                     tmp_info_obs = blue_obs_dict['fighter'][y]['info']
                     alive = 1 if blue_obs_dict['fighter'][y]['alive'] else 0
                     blue_alive.append(alive)
+                    # blue_poses.append(blue_obs_dict['fighter'][y]['pos'])
                     true_action = blue_fighter_models[y].choose_action(tmp_img_obs, tmp_info_obs)
                     blue_obs_list.append({'screen': copy.deepcopy(tmp_img_obs), 'info': copy.deepcopy(tmp_info_obs)})
                     blue_fighter_action.append(true_action)
@@ -118,14 +144,16 @@ if __name__ == "__main__":
                     tmp_info_obs = blue_obs_dict['fighter'][y]['info']
                     alive = 1 if blue_obs_dict['fighter'][y]['alive'] else 0
                     blue_alive.append(alive)
+                    # blue_poses.append(blue_obs_dict['fighter'][y]['pos'])
                     true_action = blue_fighter_models[y].choose_action(tmp_img_obs, tmp_info_obs)
                     blue_obs_list.append({'screen': copy.deepcopy(tmp_img_obs), 'info': copy.deepcopy(tmp_info_obs)})
                     blue_fighter_action[y][3] = true_action[3]
 
             # step
-            # blue_fighter_action[0] = np.array([-89, 1, 0, 0])
+            # blue_fighter_action[0] = np.array([180, 1, 0, 0])
             # print(blue_fighter_action[0])
             env.step(red_detector_action, red_fighter_action, blue_detector_action, blue_fighter_action)
+            # print(blue_obs_dict['fighter'][0]['pos'])
 
             # 获取reward
             red_detector_reward, red_fighter_reward, red_game_reward, blue_detector_reward, \
@@ -136,6 +164,10 @@ if __name__ == "__main__":
             red_detector_reward = red_detector_reward + red_game_reward
             red_fighter_reward = red_fighter_reward + red_game_reward
 
+            # blue_boundary_punish = boundary_punish(blue_poses, blue_fighter_action)
+            # blue_boundary_punish = [BETA * i for i in blue_boundary_punish]
+            blue_fighter_reward2 = blue_fighter_reward # + blue_boundary_punish
+
             blue_epoch_reward += np.mean(blue_fighter_reward)
 
             # 红色方fix_rule_no_attack的动作样式转换为与MADDPG一致
@@ -143,6 +175,18 @@ if __name__ == "__main__":
             for action in red_fighter_action:
                 tem_action = [action['course'], action['r_fre_point'], action['j_fre_point'], action['hit_target']]
                 red_fighter_action2.append(tem_action)
+
+            # 红色方agent位置
+            # red_poses = []
+            # for i in range(FIGHTER_NUM):
+            #     if red_obs_dict['fighter_obs_list'][i]['alive']:
+            #         red_poses.append(red_obs_dict['fighter_obs_list'][i]['pos_x'])
+            #         red_poses.append(red_obs_dict['fighter_obs_list'][i]['pos_y'])
+            #     else:
+            #         red_poses.append(0)
+            #         red_poses.append(0)
+
+            # 保存红色方经验
             red_action_replay.store_replay(red_fighter_action2)
 
             # 保存replay
@@ -151,11 +195,10 @@ if __name__ == "__main__":
                 tmp_img_obs = blue_obs_dict['fighter'][y]['screen']
                 tmp_img_obs = tmp_img_obs.transpose(2, 0, 1)
                 tmp_info_obs = blue_obs_dict['fighter'][y]['info']
-                alive_ = int(blue_obs_dict['fighter'][y]['alive'])
                 self_action = blue_fighter_action[y]
                 blue_obs_list_ = {'screen': copy.deepcopy(tmp_img_obs), 'info': copy.deepcopy(tmp_info_obs)}
-                blue_fighter_models[y].store_replay(blue_obs_list[y], blue_alive[y], alive_, self_action,
-                                                    blue_fighter_reward[y], blue_obs_list_)
+                blue_fighter_models[y].store_replay(blue_obs_list[y], blue_alive[y], self_action,
+                                                    blue_fighter_reward2[y], blue_obs_list_)
 
             for y in range(blue_fighter_num):
                 if not os.path.exists('model/MADDPG_SAC/%d' % y):
@@ -164,13 +207,7 @@ if __name__ == "__main__":
             # 环境判定完成后（回合完毕），开始学习模型参数
             if env.get_done():
                 # detector_model.learn()
-                mem_size = blue_fighter_models[0].get_memory_size()
-                batch_indexes = random.sample(range(mem_size), BATCH_SIZE)
-                for y in range(blue_fighter_num):
-                    other_agents = [agent for i, agent in enumerate(blue_fighter_models) if i != y]
-                    blue_fighter_models[y].learn('model/MADDPG_SAC/%d' % y, writer, batch_indexes, other_agents,
-                                                 red_action_replay)
-                writer.add_scalar(tag='blue_epoch_reward', scalar_value=blue_epoch_reward,
+                writer.add_scalar(tag='blue_avg_epoch_reward', scalar_value=blue_epoch_reward/step_cnt,
                                   global_step=x)
                 break
             # 未达到done但是达到了学习间隔时也学习模型参数
@@ -183,6 +220,12 @@ if __name__ == "__main__":
                     other_agents = [agent for i, agent in enumerate(blue_fighter_models) if i != y]
                     blue_fighter_models[y].learn('model/MADDPG_SAC/%d' % y, writer, batch_indexes, other_agents,
                                                  red_action_replay)
+
+            # 当达到一个epoch最大步数，强制进入下一个epoch
+            if step_cnt > MAX_STEP:
+                writer.add_scalar(tag='blue_avg_epoch_reward', scalar_value=blue_epoch_reward/step_cnt,
+                                  global_step=x)
+                break
 
             step_cnt += 1
             global_step_cnt += 1
