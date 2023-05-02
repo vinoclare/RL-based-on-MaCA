@@ -137,6 +137,7 @@ if __name__ == "__main__":
                 true_action = blue_fighter_models[y].choose_action(tmp_img_obs, tmp_info_obs)
                 blue_obs_list.append({'screen': copy.deepcopy(tmp_img_obs), 'info': copy.deepcopy(tmp_info_obs)})
                 blue_fighter_action.append(true_action)
+
             blue_fighter_action = np.array(blue_fighter_action)
 
             # step X 1

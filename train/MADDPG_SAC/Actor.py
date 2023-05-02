@@ -9,9 +9,9 @@ class NetFighterActor(nn.Module):
 
     def __init__(self):
         super(NetFighterActor, self).__init__()
-        self.conv1 = nn.Sequential(  # batch *2 * 100 * 100
+        self.conv1 = nn.Sequential(  # batch * 3 * 100 * 100
             nn.Conv2d(
-                in_channels=2,
+                in_channels=3,
                 out_channels=4,
                 kernel_size=5,
                 stride=1,
