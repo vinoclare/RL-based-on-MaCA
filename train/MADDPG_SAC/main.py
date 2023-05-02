@@ -41,7 +41,7 @@ q_lr = 3e-4
 
 DETECTOR_NUM = 0
 FIGHTER_NUM = 10
-MAX_MEM_SIZE = 3e4  # 经验回放池最大容量
+MAX_MEM_SIZE = 1e4  # 经验回放池最大容量
 ATTACK_IND_NUM = (DETECTOR_NUM + FIGHTER_NUM) * 2 + 1  # 导弹攻击类型数量（不攻击+中程导弹攻击目标+远程导弹攻击目标）
 RADAR_NUM = 10  # 雷达频点总数
 
@@ -142,7 +142,10 @@ if __name__ == "__main__":
             red_detector_action, red_fighter_action = red_agent.get_action(red_obs_dict, step_cnt)
             env.step(red_detector_action, red_fighter_action, blue_detector_action, blue_fighter_action)
             step_cnt += 1
-            blue_step_reward = 0
+            # 获取reward
+            red_detector_reward, red_fighter_reward, red_game_reward, blue_detector_reward, \
+                blue_fighter_reward, blue_game_reward = env.get_reward()
+            blue_step_reward = (blue_fighter_reward + blue_game_reward)
 
             # step X 9
             for i in range(9):
@@ -160,7 +163,6 @@ if __name__ == "__main__":
                 # blue_boundary_punish = [BETA * i for i in blue_boundary_punish]
                 # blue_fighter_reward2 = blue_fighter_reward + blue_boundary_punish
 
-                env.step(red_detector_action, red_fighter_action, blue_detector_action, blue_fighter_action)
             step_cnt += 9
 
             # 红色方fix_rule_no_attack的动作样式转换为与MADDPG一致
@@ -202,17 +204,13 @@ if __name__ == "__main__":
                 blue_fighter_models[y].store_replay(blue_obs_list[y], blue_alive[y], self_action,
                                                     blue_step_reward[y], blue_obs_list_, done)
 
-            # 获取reward
-            red_detector_reward, red_fighter_reward, red_game_reward, blue_detector_reward, \
-                blue_fighter_reward, blue_game_reward = env.get_reward()
-            blue_step_reward += (blue_fighter_reward + blue_game_reward)
             blue_epoch_reward += blue_step_reward.mean()
             print("epoch: %d  step: %d  avg_step_reward: %.3f" % (x + 1, step_cnt, blue_step_reward.mean() / 10))
 
             # 环境判定完成后（回合完毕），开始学习模型参数
             if env.get_done():
                 # detector_model.learn()
-                if x+1 > start_learn_epoch:
+                if x + 1 > start_learn_epoch:
                     writer.add_scalar(tag='blue_avg_epoch_reward', scalar_value=blue_epoch_reward/step_cnt,
                                       global_step=x-10)
                 print("avg_epoch_reward: %.3f" % (blue_epoch_reward/step_cnt))
@@ -238,7 +236,8 @@ if __name__ == "__main__":
                         blue_fighter_models[y].learn('model/MADDPG_SAC/%d' % y, writer, batch_indexes, other_agents,
                                                      red_action_replay)
                     writer.add_scalar(tag='blue_avg_epoch_reward', scalar_value=blue_epoch_reward/step_cnt,
-                                      global_step=x-10)
+                                          global_step=x-10)
+                print("avg_epoch_reward: %.3f" % (blue_epoch_reward / step_cnt))
                 break
 
     writer.close()
