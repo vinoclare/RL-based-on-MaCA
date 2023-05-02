@@ -24,7 +24,7 @@ from configuration.reward import GlobalVar as REWARD
 MAP_PATH = os.path.join(root_path, 'maps/1000_1000_fighter10v10.map')
 
 RENDER = True  # 是否渲染，渲染能加载出实时的训练画面，但是会降低训练速度
-MAX_EPOCH = 150
+MAX_EPOCH = 2000
 BATCH_SIZE = 256
 GAMMA = 0.99  # reward discount
 TAU = 0.99
@@ -32,7 +32,8 @@ BETA = 0  # 边界惩罚discount
 replace_target_iter = 50
 MAX_STEP = 999  # 1个epoch内最大步数
 LEARN_INTERVAL = 500  # 学习间隔
-start_learn_epoch = 10  # 第10个epoch开始训练
+start_learn_epoch = 10  # 第x个epoch开始训练
+pass_step = 20  # 间隔x个step保存一次经验
 
 # 网络学习率
 actor_lr = 3e-4
@@ -147,8 +148,8 @@ if __name__ == "__main__":
                 blue_fighter_reward, blue_game_reward = env.get_reward()
             blue_step_reward = (blue_fighter_reward + blue_game_reward)
 
-            # step X 9
-            for i in range(9):
+            # step X pass_step-1
+            for i in range(pass_step-1):
                 # 获取红色方行动
                 red_obs_dict, _ = env.get_obs()
                 red_detector_action, red_fighter_action = red_agent.get_action(red_obs_dict, step_cnt)
@@ -163,7 +164,7 @@ if __name__ == "__main__":
                 # blue_boundary_punish = [BETA * i for i in blue_boundary_punish]
                 # blue_fighter_reward2 = blue_fighter_reward + blue_boundary_punish
 
-            step_cnt += 9
+            step_cnt += pass_step - 1
 
             # 红色方fix_rule_no_attack的动作样式转换为与MADDPG一致
             red_fighter_action2 = []
@@ -199,24 +200,24 @@ if __name__ == "__main__":
                     done = 1
                     if red_alive == 0:
                         blue_step_reward[y] += REWARD.reward_totally_win
+                        print('epoch: %d  total win!' % x)
                     elif red_alive < 3:
                         blue_step_reward[y] += REWARD.reward_win
+                        print('epoch: %d  win!' % x)
                 blue_fighter_models[y].store_replay(blue_obs_list[y], blue_alive[y], self_action,
-                                                    blue_step_reward[y], blue_obs_list_, done)
+                                                    blue_step_reward[y]/pass_step, blue_obs_list_, done)
 
             blue_epoch_reward += blue_step_reward.mean()
-            print("epoch: %d  step: %d  avg_step_reward: %.3f" % (x + 1, step_cnt, blue_step_reward.mean() / 10))
 
             # 环境判定完成后（回合完毕），开始学习模型参数
             if env.get_done():
                 # detector_model.learn()
                 if x + 1 > start_learn_epoch:
                     writer.add_scalar(tag='blue_avg_epoch_reward', scalar_value=blue_epoch_reward/step_cnt,
-                                      global_step=x-10)
+                                      global_step=x-start_learn_epoch)
                 print("avg_epoch_reward: %.3f" % (blue_epoch_reward/step_cnt))
                 break
             # 未达到done但是达到了学习间隔时也学习模型参数
-            # 100个step learn一次
             if x+1 > start_learn_epoch and step_cnt != 0 and (step_cnt % LEARN_INTERVAL == 0):
                 # detector_model.learn()
                 mem_size = blue_fighter_models[0].get_memory_size()
@@ -236,7 +237,7 @@ if __name__ == "__main__":
                         blue_fighter_models[y].learn('model/MADDPG_SAC/%d' % y, writer, batch_indexes, other_agents,
                                                      red_action_replay)
                     writer.add_scalar(tag='blue_avg_epoch_reward', scalar_value=blue_epoch_reward/step_cnt,
-                                          global_step=x-10)
+                                          global_step=x-start_learn_epoch)
                 print("avg_epoch_reward: %.3f" % (blue_epoch_reward / step_cnt))
                 break
 
