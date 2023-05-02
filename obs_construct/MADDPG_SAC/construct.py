@@ -38,7 +38,7 @@ class ObsConstruct:
         obs_dict['fighter'] = fighter_obs_list
         return obs_dict
 
-    def __get_alive_status(self,detector_data_obs_list,fighter_data_obs_list):
+    def __get_alive_status(self, detector_data_obs_list, fighter_data_obs_list):
         # 获取fighter与detector的存活信息
         alive_status = np.full((self.detector_num+self.fighter_num,1),True)
         for x in range(self.detector_num):
@@ -50,14 +50,13 @@ class ObsConstruct:
         return alive_status
 
     def __get_img_obs(self, detector_data_obs_list, fighter_data_obs_list, joint_data_obs_dict):
-        # 视野范围
         img_obs_size_x = int(self.battlefield_size_y / self.img_obs_reduce_ratio)
         img_obs_size_y = int(self.battlefield_size_x / self.img_obs_reduce_ratio)
         # 初始化img（1 channels）
         detector_img = np.full((self.detector_num, img_obs_size_x, img_obs_size_y, 3), 0, dtype=np.int32)
         fighter_img = np.full((self.fighter_num, img_obs_size_x, img_obs_size_y, 1), 0, dtype=np.int32)
         # 联合img（1 channels）
-        joint_img = np.full((1, img_obs_size_x, img_obs_size_y, 2), 0, dtype=np.int32)
+        joint_img = np.full((1, img_obs_size_x, img_obs_size_y, 1), 0, dtype=np.int32)
 
         # 友方agent位置
         tmp_pos_obs = np.full((img_obs_size_x, img_obs_size_y), 0, dtype=np.int32)
@@ -151,14 +150,9 @@ class ObsConstruct:
                                                 'pos_y'] / self.img_obs_reduce_ratio),
                                         int(fighter_data_obs_list[x]['r_visible_list'][y][
                                                 'pos_x'] / self.img_obs_reduce_ratio),
-                                        200 if fighter_data_obs_list[x]['r_visible_list'][y]['type'] == 0 else 128)
-                # channel 2
-                self.__set_value_in_img(joint_img[0, :, :, 1],
-                                        int(fighter_data_obs_list[x]['r_visible_list'][y][
-                                                'pos_y'] / self.img_obs_reduce_ratio),
-                                        int(fighter_data_obs_list[x]['r_visible_list'][y][
-                                                'pos_x'] / self.img_obs_reduce_ratio),
-                                        fighter_data_obs_list[x]['r_visible_list'][y]['id'])
+                                        200 + fighter_data_obs_list[x]['r_visible_list'][y]['id']
+                                        if fighter_data_obs_list[x]['r_visible_list'][y]['type'] == 0 else
+                                        128 + fighter_data_obs_list[x]['r_visible_list'][y]['id'])
         return detector_img, fighter_img, joint_img
 
     def __set_value_in_img(self, img, pos_x, pos_y, value):

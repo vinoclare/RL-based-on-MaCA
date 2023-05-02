@@ -30,7 +30,7 @@ GAMMA = 0.99  # reward discount
 TAU = 0.99
 BETA = 0  # 边界惩罚discount
 replace_target_iter = 50
-MAX_STEP = 999  # 1个epoch内最大步数
+MAX_STEP = 998  # 1个epoch内最大步数
 LEARN_INTERVAL = 500  # 学习间隔
 start_learn_epoch = 10  # 第x个epoch开始训练
 pass_step = 20  # 间隔x个step保存一次经验
@@ -111,7 +111,7 @@ if __name__ == "__main__":
 
     # 训练循环
     for x in range(MAX_EPOCH):
-        print("Epoch: %d" % (x + 1))
+        print("Epoch: %d" % x)
         step_cnt = 0
         env.reset()  # 重置环境
         blue_epoch_reward = 0  # 记录一个epoch内的蓝方平均reward

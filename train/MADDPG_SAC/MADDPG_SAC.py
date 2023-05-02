@@ -270,4 +270,8 @@ class RLFighter:
         writer.add_scalar(tag='%s_critic_loss' % self.name, scalar_value=critic_loss, global_step=self.learn_step_counter)
         writer.add_scalar(tag='%s_value' % self.name, scalar_value=min_q_pi.mean(), global_step=self.learn_step_counter)
 
+        writer.add_scalar(tag='%s_q_target' % self.name, scalar_value=q_target.mean(), global_step=self.learn_step_counter)
+        writer.add_scalar(tag='%s_q_cur' % self.name, scalar_value=q1_cur.mean(), global_step=self.learn_step_counter)
+        writer.add_scalar(tag='%s_r' % self.name, scalar_value=r_batch.mean(), global_step=self.learn_step_counter)
+
         self.learn_step_counter += 1
