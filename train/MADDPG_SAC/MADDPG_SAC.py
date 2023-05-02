@@ -9,7 +9,6 @@ import os
 from common.Replay2 import Memory
 from train.MADDPG_SAC.Critic import NetFighterCritic
 from train.MADDPG_SAC.Actor import NetFighterActor
-from train.MADDPG_SAC.Q import NetFighterQ
 from torch.distributions import Normal
 
 
@@ -26,6 +25,7 @@ class RLFighter:
             q_lr=3e-4,
             reward_decay=0.99,
             tau=0.99,
+            alpha=0.2,
             replace_target_iter=50,
             max_memory_size=1e4,
             batch_size=512,
@@ -39,6 +39,7 @@ class RLFighter:
         self.attack_num = attack_num  # 总攻击类型数量
         self.fighter_num = fighter_num  # 本队fighter数量
         self.radar_num = radar_num  # 雷达频点数
+        self.alpha = alpha  # 温度系数
         self.batch_size = batch_size
         self.noise_rate = 5  # 噪声率（用于为动作添加随机扰动）
         self.ac_lr = actor_lr  # actor网络学习率
@@ -62,9 +63,8 @@ class RLFighter:
         self.learn_step_counter = 1
 
         # 初始化网络
-        self.eval_net_critic_fighter, self.target_net_critic_fighter = NetFighterCritic(), NetFighterCritic()
+        self.eval_net_critic_fighter, self.target_net_critic_fighter = NetFighterCritic(self.agent_num), NetFighterCritic(self.agent_num)
         self.policy_net_fighter = NetFighterActor()
-        self.Q_net_fighter = NetFighterQ(self.agent_num)
 
         # 初始化网络参数
         for m1 in self.policy_net_fighter.modules():
@@ -77,7 +77,6 @@ class RLFighter:
             print('GPU Available!!')
             self.eval_net_critic_fighter = self.eval_net_critic_fighter.cuda()
             self.target_net_critic_fighter = self.target_net_critic_fighter.cuda()
-            self.Q_net_fighter = self.Q_net_fighter.cuda()
             self.policy_net_fighter = self.policy_net_fighter.cuda()
 
         self.loss_func = nn.MSELoss()
@@ -93,7 +92,6 @@ class RLFighter:
         # Adam
         self.critic_optimizer_fighter = torch.optim.Adam(self.eval_net_critic_fighter.parameters(), lr=self.cr_lr)
         self.policy_optimizer_fighter = torch.optim.Adam(self.policy_net_fighter.parameters(), lr=self.ac_lr)
-        self.Q_optimizer_fighter = torch.optim.Adam(self.Q_net_fighter.parameters(), lr=self.q_lr)
 
     def copy_param(self, eval_net, target_net, tau):
         # 将eval网络中的参数复制到target网络中
@@ -182,8 +180,8 @@ class RLFighter:
         action = torch.cat([course, radar, disturb, attack], 1)
 
         act2 = torch.tanh(act)
-        log_prob = dist.log_prob(act) - torch.log(1 - act2.pow(2) + torch.tensor(1e-7).float())
-        log_prob = log_prob.mean(dim=1)
+        log_prob = dist.log_prob(act) - torch.log(1 - act2.pow(2) + torch.tensor(1e-6).float())
+        log_prob = log_prob.sum(dim=1)
         log_prob = torch.unsqueeze(log_prob, 1)
         return action, log_prob
 
@@ -219,12 +217,11 @@ class RLFighter:
     #     action = torch.cat([course, radar, disturb, attack], 1)
     #     return action
 
-    def learn(self, save_path, writer, batch_indexes, mate_agents, red_replay):
+    def learn(self, save_path, writer, batch_indexes, mate_agents, red_replay, done=0):
         # 复制参数+保存参数
         # learn50次复制/保存一次参数
         if self.learn_step_counter % self.replace_target_iter == 0:
             self.copy_param(self.eval_net_critic_fighter, self.target_net_critic_fighter, self.tau)
-            print('\ntarget_params_replaced\n')
             # step_counter_str = '%09d' % self.learn_step_counter
             # critic_path = save_path + '/critic/'
             # actor_path = save_path + '/actor/'
@@ -256,14 +253,6 @@ class RLFighter:
         [s_screen_batch, s_info_batch, alive_batch, self_a_batch,
          r_batch, s__screen_batch, s__info_batch] = self.memory.sample_replay(batch_indexes)
 
-        self.critic_optimizer_fighter.zero_grad()
-        self.policy_optimizer_fighter.zero_grad()
-        self.Q_optimizer_fighter.zero_grad()
-
-        # 计算agent自身的action
-        self.action, log_probs = self.choose_action_batch(s_screen_batch, s_info_batch)
-        self.action = self.action.view(self.action.size(0), 1, self.action.size(1))
-
         # 队友action
         for i in range(9):
             [_, _, _, action, _, _, _] = mate_agents[i].memory.sample_replay(batch_indexes)
@@ -276,37 +265,36 @@ class RLFighter:
         # 敌方action
         other_a_batch = red_replay.sample_replay(batch_indexes)
 
-        # 双方全部的action
+        # 自己的action
         self_a_batch = torch.unsqueeze(self_a_batch, 1)
-        all_action = torch.cat([self.action, mate_a_batch, other_a_batch], 1).view(mate_a_batch.size(0), -1)
-        if self.gpu_enable:
-            all_action = all_action.cuda()
-        all_action = all_action.float()
-        q_eval = self.eval_net_critic_fighter(s_screen_batch, s_info_batch)
-        q_next = self.target_net_critic_fighter(s__screen_batch, s__info_batch).detach()  # detach使tensor不能反向传播
-        q_target = r_batch + alive_batch * self.gamma * q_next.view(-1, 1)  # shape (batch, 1)
 
         # 反向传播、优化
-        # Q
-        q_loss = self.loss_func(q_eval, q_target)
-        q_loss.backward()
-        nn.utils.clip_grad_norm_(self.Q_net_fighter.parameters(), 0.5)
-        self.Q_optimizer_fighter.step()
-
         # Critic
-        value = self.eval_net_critic_fighter(s_screen_batch, s_info_batch)
-        q_new = self.Q_net_fighter(s_screen_batch, s_info_batch, all_action)
-        next_value = q_new - log_probs
-        critic_loss = self.loss_func(value, next_value.detach())
+        with torch.no_grad():
+            action_, log_probs_ = self.choose_action_batch(s__screen_batch, s__info_batch)
+            action_ = torch.unsqueeze(action_, 1)
+            all_action_ = torch.cat([action_, mate_a_batch, other_a_batch], 1).view(mate_a_batch.size(0), -1)
+            all_mem_action = torch.cat([self_a_batch, mate_a_batch, other_a_batch], 1).view(mate_a_batch.size(0), -1)
+            q1_next, q2_next = self.target_net_critic_fighter(s__screen_batch, s__info_batch, all_action_)
+            q_target = torch.min(q1_next, q2_next) - self.alpha * log_probs_
+            q_target = r_batch + alive_batch * self.gamma * (1 - done) * q_target
+        q1_cur, q2_cur = self.eval_net_critic_fighter(s_screen_batch, s_info_batch, all_mem_action)
+
+        critic_loss = self.loss_func(q1_cur, q_target) + self.loss_func(q2_cur, q_target)
+        self.critic_optimizer_fighter.zero_grad()
         critic_loss.backward()
-        nn.utils.clip_grad_norm_(self.eval_net_critic_fighter.parameters(), 0.5)
         self.critic_optimizer_fighter.step()
 
-        # actor
-        log_policy_target = q_new - value
-        actor_loss = (log_probs * (log_probs - log_policy_target).detach()).mean()
+        # Actor
+        action, log_probs = self.choose_action_batch(s_screen_batch, s_info_batch)
+        action = torch.unsqueeze(action, 1)
+        all_action = torch.cat([action, mate_a_batch, other_a_batch], 1).view(mate_a_batch.size(0), -1)
+        q1_pi, q2_pi = self.eval_net_critic_fighter(s_screen_batch, s_info_batch, all_action)
+        min_q_pi = torch.min(q1_pi, q2_pi)
+        actor_loss = ((self.alpha * log_probs) - min_q_pi).mean()
+        self.policy_optimizer_fighter.zero_grad()
         actor_loss.backward()
-        nn.utils.clip_grad_norm_(self.policy_net_fighter.parameters(), 0.5)
+        # nn.utils.clip_grad_norm_(self.eval_net_critic_fighter.parameters(), 0.5)
         self.policy_optimizer_fighter.step()
 
         print("learn_step: %d, %s_critic_loss: %.4f, %s_actor_loss: %.4f, mean_reward: %.2f" % (
@@ -315,7 +303,6 @@ class RLFighter:
         # 训练过程保存
         writer.add_scalar(tag='%s_actor_loss' % self.name, scalar_value=actor_loss, global_step=self.learn_step_counter)
         writer.add_scalar(tag='%s_critic_loss' % self.name, scalar_value=critic_loss, global_step=self.learn_step_counter)
-        writer.add_scalar(tag='%s_q_loss' % self.name, scalar_value=q_loss, global_step=self.learn_step_counter)
-        writer.add_scalar(tag='%s_value' % self.name, scalar_value=q_eval.mean(), global_step=self.learn_step_counter)
+        writer.add_scalar(tag='%s_value' % self.name, scalar_value=min_q_pi.mean(), global_step=self.learn_step_counter)
 
         self.learn_step_counter += 1
