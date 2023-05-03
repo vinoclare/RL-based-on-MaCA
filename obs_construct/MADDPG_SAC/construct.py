@@ -152,7 +152,7 @@ class ObsConstruct:
                                                 'pos_x'] / self.img_obs_reduce_ratio),
                                         200 + fighter_data_obs_list[x]['r_visible_list'][y]['id']
                                         if fighter_data_obs_list[x]['r_visible_list'][y]['type'] == 0 else
-                                        128 + fighter_data_obs_list[x]['r_visible_list'][y]['id'])
+                                        90 + fighter_data_obs_list[x]['r_visible_list'][y]['id'] * 10)
         return detector_img, fighter_img, joint_img
 
     def __set_value_in_img(self, img, pos_x, pos_y, value):

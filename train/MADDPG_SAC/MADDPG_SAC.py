@@ -124,6 +124,7 @@ class RLFighter:
         dist = Normal(means, stds)
         act = dist.rsample()
         course = torch.tanh(act[:, 0]) * 180
+
         try:
             # 航向
             course = int(course)

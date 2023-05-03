@@ -138,6 +138,9 @@ if __name__ == "__main__":
                 blue_obs_list.append({'screen': copy.deepcopy(tmp_img_obs), 'info': copy.deepcopy(tmp_info_obs)})
                 blue_fighter_action.append(true_action)
 
+                # if np.any(tmp_img_obs[1] == 150):
+                #     fuck
+
             blue_fighter_action = np.array(blue_fighter_action)
 
             # step X 1
@@ -176,11 +179,13 @@ if __name__ == "__main__":
             # 红色方agent位置以及存活数量
             red_poses = []
             red_alive = 0
+            alive_id = []
             for i in range(FIGHTER_NUM):
                 if red_obs_dict['fighter_obs_list'][i]['alive']:
                     red_poses.append(red_obs_dict['fighter_obs_list'][i]['pos_x'])
                     red_poses.append(red_obs_dict['fighter_obs_list'][i]['pos_y'])
                     red_alive += 1
+                    alive_id.append(i+1)
                 else:
                     red_poses.append(0)
                     red_poses.append(0)
@@ -239,6 +244,7 @@ if __name__ == "__main__":
                                                      red_action_replay)
                     writer.add_scalar(tag='blue_avg_epoch_reward', scalar_value=blue_epoch_reward/step_cnt,
                                           global_step=x-start_learn_epoch)
+                # print(alive_id)
                 print("avg_epoch_reward: %.3f" % (blue_epoch_reward / step_cnt))
                 break
 
