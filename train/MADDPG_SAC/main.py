@@ -29,16 +29,15 @@ BATCH_SIZE = 256
 GAMMA = 0.99  # reward discount
 TAU = 0.99
 BETA = 0  # 边界惩罚discount
-replace_target_iter = 50  # target网络更新频率
-MAX_STEP = 998  # 1个epoch内最大步数
+replace_target_iter = 10  # target网络更新频率
+MAX_STEP = 1998  # 1个epoch内最大步数
 LEARN_INTERVAL = 500  # 学习间隔
-start_learn_epoch = 10  # 第x个epoch开始训练
-pass_step = 20  # 间隔x个step保存一次经验
+start_learn_epoch = 5  # 第x个epoch开始训练
+pass_step = 10  # 间隔x个step保存一次经验
 
 # 网络学习率
-actor_lr = 3e-4
-critic_lr = 3e-4
-q_lr = 3e-4
+actor_lr = 1e-5
+critic_lr = 1e-5
 
 DETECTOR_NUM = 0
 FIGHTER_NUM = 10
@@ -97,7 +96,7 @@ if __name__ == "__main__":
         blue_fighter_model = MADDPG.RLFighter(name='blue_%d' % y, agent_num=(DETECTOR_NUM + FIGHTER_NUM) * 2,
                                               attack_num=ATTACK_IND_NUM, fighter_num=FIGHTER_NUM, radar_num=RADAR_NUM,
                                               max_memory_size=MAX_MEM_SIZE, replace_target_iter=replace_target_iter,
-                                              actor_lr=actor_lr, critic_lr=critic_lr, q_lr=q_lr, reward_decay=GAMMA,
+                                              actor_lr=actor_lr, critic_lr=critic_lr, reward_decay=GAMMA,
                                               tau=TAU, batch_size=BATCH_SIZE)
         blue_fighter_models.append(blue_fighter_model)
     red_agent.set_map_info(size_x, size_y, blue_detector_num, blue_fighter_num)
@@ -110,6 +109,7 @@ if __name__ == "__main__":
             os.makedirs('model/MADDPG_SAC/%d' % y)
 
     # 训练循环
+    global_step_cnt = 0
     for x in range(MAX_EPOCH):
         print("Epoch: %d" % x)
         step_cnt = 0
@@ -207,12 +207,15 @@ if __name__ == "__main__":
                     if red_alive == 0:
                         blue_step_reward[y] += REWARD.reward_totally_win
                         print('epoch: %d  total win!' % x)
-                    elif red_alive < 3:
+                    elif red_alive < 4:
                         blue_step_reward[y] += REWARD.reward_win
                         print('epoch: %d  win!' % x)
+                    blue_step_reward[y] += 30 * (10 - red_alive)
                 blue_fighter_models[y].store_replay(blue_obs_list[y], blue_alive[y], self_action,
                                                     blue_step_reward[y]/pass_step, blue_obs_list_, done)
-
+            global_step_cnt += 1
+            # writer.add_scalar(tag='step_reward', scalar_value=blue_step_reward.mean(),
+            #                   global_step=global_step_cnt)
             blue_epoch_reward += blue_step_reward.mean()
 
             # 环境判定完成后（回合完毕），开始学习模型参数

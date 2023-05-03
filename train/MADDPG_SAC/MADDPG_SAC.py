@@ -44,7 +44,6 @@ class RLFighter:
         self.noise_rate = 5  # 噪声率（用于为动作添加随机扰动）
         self.ac_lr = actor_lr  # actor网络学习率
         self.cr_lr = critic_lr  # critic网络学习率
-        self.q_lr = q_lr  # q网络学习率
         self.gamma = reward_decay  # 奖励的衰减率
         self.tau = tau  # 模型参数复制时的参数保留率
         self.replace_target_iter = replace_target_iter  # eval网络参数更新到target网络的频率
@@ -269,7 +268,6 @@ class RLFighter:
         # 训练过程保存
         writer.add_scalar(tag='%s_actor_loss' % self.name, scalar_value=actor_loss, global_step=self.learn_step_counter)
         writer.add_scalar(tag='%s_critic_loss' % self.name, scalar_value=critic_loss, global_step=self.learn_step_counter)
-        writer.add_scalar(tag='%s_value' % self.name, scalar_value=min_q_pi.mean(), global_step=self.learn_step_counter)
 
         writer.add_scalar(tag='%s_q_target' % self.name, scalar_value=q_target.mean(), global_step=self.learn_step_counter)
         writer.add_scalar(tag='%s_q_cur' % self.name, scalar_value=q1_cur.mean(), global_step=self.learn_step_counter)

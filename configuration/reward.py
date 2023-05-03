@@ -43,13 +43,13 @@ class GlobalVar:
     # fighter radar see a fighter
     reward_radar_fighter_fighter = 10
     # Missile hit a fighter
-    reward_strike_fighter_success = 10
+    reward_strike_fighter_success = 20
     # Missile miss a fighter
     reward_strike_fighter_fail = -10
     # A fighter been destroyed
     reward_fighter_destroyed = -20
     # A valid attack action
-    reward_strike_act_valid = 1
+    reward_strike_act_valid = 10
     # An invalid attack action
     reward_strike_act_invalid = -1
     # Keep alive in a step

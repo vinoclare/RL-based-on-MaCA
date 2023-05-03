@@ -14,38 +14,31 @@ class NetFighterActor(nn.Module):
                 in_channels=2,
                 out_channels=6,
                 kernel_size=5,
-                stride=3,
+                stride=1,
+                padding=2,
             ),
             nn.ReLU(),
             nn.MaxPool2d(2),
         )
-        self.conv2 = nn.Sequential(  # batch * 6 * 16 * 16
+        self.conv2 = nn.Sequential(  # batch * 6 * 50 * 50
             nn.Conv2d(
                 in_channels=6,
                 out_channels=12,
                 kernel_size=5,
                 stride=1,
+                padding=2,
             ),
             nn.ReLU(),
             nn.MaxPool2d(2),
-        )
-        self.conv3 = nn.Sequential(  # batch * 12 * 6 * 6
-            nn.Conv2d(
-                in_channels=12,
-                out_channels=32,
-                kernel_size=3,
-                stride=1,
-            ),
-            nn.ReLU(),
-        )  # batch * 32 * 4 * 4
-        self.img_layernorm = nn.LayerNorm(32 * 4 * 4)
+        )  # bacth * 12 * 25 * 25
+        self.img_layernorm = nn.LayerNorm(25 * 25 * 6)
         self.info_fc = nn.Sequential(
             nn.Linear(3, 64),
             nn.LayerNorm(64),
             nn.ReLU(),
         )
         self.feature_fc = nn.Sequential(
-            nn.Linear((32 * 4 * 4 + 64), 256),
+            nn.Linear((25 * 25 * 6 + 64), 256),
             nn.LayerNorm(256),
             nn.ReLU(),
         )
@@ -59,11 +52,10 @@ class NetFighterActor(nn.Module):
     def forward(self, img, info):
         img_feature1 = self.conv1(img)
         img_feature2 = self.conv2(img_feature1)
-        img_feature3 = self.conv3(img_feature2)
-        img_feature4 = img_feature3.view(img_feature3.size(0), -1)
-        img_feature5 = self.img_layernorm(img_feature4)
+        img_feature3 = img_feature2.view(img_feature2.size(0), -1)
+        img_feature4 = self.img_layernorm(img_feature3)
         info_feature = self.info_fc(info)
-        combined = torch.cat((img_feature5, info_feature.view(info_feature.size(0), -1)), dim=1)
+        combined = torch.cat((img_feature4, info_feature.view(info_feature.size(0), -1)), dim=1)
         feature = self.feature_fc(combined)
         means = self.mean_head(feature)
         log_stds = self.log_std_head(feature)
