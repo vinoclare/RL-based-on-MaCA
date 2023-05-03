@@ -22,7 +22,6 @@ class RLFighter:
             radar_num,
             actor_lr=3e-4,
             critic_lr=3e-4,
-            q_lr=3e-4,
             reward_decay=0.99,
             tau=0.99,
             alpha=0.2,
@@ -89,7 +88,6 @@ class RLFighter:
 
         # 优化器
         # Adam
-        self.critic_optimizer_fighter = torch.optim.Adam(self.eval_net_critic_fighter.parameters(), lr=self.cr_lr)
         self.policy_optimizer_fighter = torch.optim.Adam(self.policy_net_fighter.parameters(), lr=self.ac_lr)
 
     def copy_param(self, eval_net, target_net, tau):
@@ -185,6 +183,34 @@ class RLFighter:
         log_prob = torch.unsqueeze(log_prob, 1)
         return action, log_prob
 
+    def get_data(self, batch_indexes, mate_agents, red_replay):
+        # 采样Replay
+        [s_screen_batch, s_info_batch, alive_batch, self_a_batch,
+         r_batch, s__screen_batch, s__info_batch, done_batch] = self.memory.sample_replay(batch_indexes)
+
+        # 队友action
+        for i in range(9):
+            [_, _, _, action, _, _, _, _] = mate_agents[i].memory.sample_replay(batch_indexes)
+            if i == 0:
+                mate_a_batch = torch.unsqueeze(action, 1)
+            else:
+                tem_act = torch.unsqueeze(action, 1)
+                mate_a_batch = torch.cat([mate_a_batch, tem_act], 1)
+
+        # 敌方action
+        other_a_batch = red_replay.sample_replay(batch_indexes)
+
+        # 自己的action
+        self_a_batch = torch.unsqueeze(self_a_batch, 1)
+
+        all_mem_action = torch.cat([self_a_batch, mate_a_batch, other_a_batch], 1).view(mate_a_batch.size(0), -1)
+        action_, log_probs_ = self.choose_action_batch(s__screen_batch, s__info_batch)
+        action_ = torch.unsqueeze(action_, 1)
+        all_action_ = torch.cat([action_, mate_a_batch, other_a_batch], 1).view(mate_a_batch.size(0), -1)
+
+        return s_screen_batch, s_info_batch, s__screen_batch, s__info_batch, all_mem_action, \
+            all_action_, log_probs_, r_batch, alive_batch, done_batch
+
     def learn(self, save_path, writer, batch_indexes, mate_agents, red_replay):
         # 复制参数+保存参数
         # learn50次复制/保存一次参数
@@ -233,26 +259,7 @@ class RLFighter:
         # 敌方action
         other_a_batch = red_replay.sample_replay(batch_indexes)
 
-        # 自己的action
-        self_a_batch = torch.unsqueeze(self_a_batch, 1)
-
         # 反向传播、优化
-        # Critic
-        with torch.no_grad():
-            action_, log_probs_ = self.choose_action_batch(s__screen_batch, s__info_batch)
-            action_ = torch.unsqueeze(action_, 1)
-            all_action_ = torch.cat([action_, mate_a_batch, other_a_batch], 1).view(mate_a_batch.size(0), -1)
-            all_mem_action = torch.cat([self_a_batch, mate_a_batch, other_a_batch], 1).view(mate_a_batch.size(0), -1)
-            q1_next, q2_next = self.target_net_critic_fighter(s__screen_batch, s__info_batch, all_action_)
-            q_target = torch.min(q1_next, q2_next) - self.alpha * log_probs_
-            q_target = r_batch + alive_batch * self.gamma * q_target * (1 - done_batch)
-        q1_cur, q2_cur = self.eval_net_critic_fighter(s_screen_batch, s_info_batch, all_mem_action)
-
-        critic_loss = self.loss_func(q1_cur, q_target) + self.loss_func(q2_cur, q_target)
-        self.critic_optimizer_fighter.zero_grad()
-        critic_loss.backward()
-        self.critic_optimizer_fighter.step()
-
         # Actor
         action, log_probs = self.choose_action_batch(s_screen_batch, s_info_batch)
         action = torch.unsqueeze(action, 1)
@@ -267,10 +274,6 @@ class RLFighter:
 
         # 训练过程保存
         writer.add_scalar(tag='%s_actor_loss' % self.name, scalar_value=actor_loss, global_step=self.learn_step_counter)
-        writer.add_scalar(tag='%s_critic_loss' % self.name, scalar_value=critic_loss, global_step=self.learn_step_counter)
-
-        writer.add_scalar(tag='%s_q_target' % self.name, scalar_value=q_target.mean(), global_step=self.learn_step_counter)
-        writer.add_scalar(tag='%s_q_cur' % self.name, scalar_value=q1_cur.mean(), global_step=self.learn_step_counter)
         writer.add_scalar(tag='%s_r' % self.name, scalar_value=r_batch.mean(), global_step=self.learn_step_counter)
 
         self.learn_step_counter += 1

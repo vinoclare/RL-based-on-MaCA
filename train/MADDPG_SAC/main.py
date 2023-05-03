@@ -12,6 +12,8 @@ sys.path.append(env_path)
 
 import copy
 import math
+import torch
+import torch.nn as nn
 import numpy as np
 from agent.fix_rule_no_att.agent import Agent
 from interface import Environment
@@ -20,6 +22,7 @@ from train.MADDPG_SAC import MADDPG_SAC as MADDPG
 from torch.utils.tensorboard import SummaryWriter
 from common.Replay3 import Memory
 from configuration.reward import GlobalVar as REWARD
+from Attention import Attention
 
 MAP_PATH = os.path.join(root_path, 'maps/1000_1000_fighter10v10.map')
 
@@ -29,8 +32,9 @@ BATCH_SIZE = 256
 GAMMA = 0.99  # reward discount
 TAU = 0.99
 BETA = 0  # 边界惩罚discount
+ALPHA = 0.2  # 温度系数
 replace_target_iter = 10  # target网络更新频率
-MAX_STEP = 1998  # 1个epoch内最大步数
+MAX_STEP = 1999  # 1个epoch内最大步数
 LEARN_INTERVAL = 500  # 学习间隔
 start_learn_epoch = 5  # 第x个epoch开始训练
 pass_step = 10  # 间隔x个step保存一次经验
@@ -75,6 +79,44 @@ def boundary_punish(all_pos, actions):
     return ps
 
 
+def train_critic(agents, Attention, critic_optimizer_fighters, batch_indexes, red_replay):
+    e1, e2 = [], []
+    e1_, e2_ = [], []
+    loss_func = nn.MSELoss()
+    for i in range(len(agents)):
+        mate_agents = [agent for j, agent in enumerate(agents) if j != i]
+        s_screen_batch, s_info_batch, s__screen_batch, s__info_batch, all_mem_action, all_action_, log_probs_, r_batch,\
+            alive_batch, done_batch = agents[i].get_data(batch_indexes, mate_agents, red_replay)
+        e1_next, e2_next = agents[i].target_net_critic_fighter.encoding(s__screen_batch, s__info_batch, all_action_)
+        e1_cur, e2_cur = agents[i].eval_net_critic_fighter(s_screen_batch, s_info_batch, all_mem_action)
+        e1.append(e1_next)
+        e2.append(e2_next)
+        e1_.append(e1_cur)
+        e2.append(e2_cur)
+
+    attentions1 = Attention(e1)
+    attentions2 = Attention(e2)
+    attentions1_ = Attention(e1_)
+    attentions2_ = Attention(e2_)
+
+    for i in range(len(agents)):
+        mate_agents = [agent for j, agent in enumerate(agents) if j != i]
+        s_screen_batch, s_info_batch, s__screen_batch, s__info_batch, all_mem_action, all_action_, log_probs_, r_batch,\
+            alive_batch, done_batch = agents[i].get_data(batch_indexes, mate_agents, red_replay)
+        q1_next = agents[i].target_net_critic_fighter.decoding(attentions1[i])
+        q2_next = agents[i].target_net_critic_fighter.decoding(attentions2[i])
+        q_target = torch.min(q1_next, q2_next) - ALPHA * log_probs_
+        q_target = r_batch + alive_batch * GAMMA * q_target * (1 - done_batch)
+
+        q1_cur = agents[i].eval_net_critic_fighter.decoding(attentions1_[i])
+        q2_cur = agents[i].eval_net_critic_fighter.decoding(attentions2_[i])
+
+        critic_loss = loss_func(q1_cur, q_target.detach()) + loss_func(q2_cur, q_target.detach())
+        critic_optimizer_fighters[i].zero_grad()
+        critic_loss.backward()
+        critic_optimizer_fighters[i].step()
+
+
 if __name__ == "__main__":
     # 红色方为fix rule no attack，蓝色方为MADDPG
     red_agent = Agent()
@@ -92,6 +134,12 @@ if __name__ == "__main__":
     # 为双方设置环境信息
     blue_detector_action = []
     blue_fighter_models = []
+
+    # Attention模块
+    attention = Attention()
+
+    # critic优化器
+    critic_optimizer_fighters = []
     for y in range(blue_fighter_num):
         blue_fighter_model = MADDPG.RLFighter(name='blue_%d' % y, agent_num=(DETECTOR_NUM + FIGHTER_NUM) * 2,
                                               attack_num=ATTACK_IND_NUM, fighter_num=FIGHTER_NUM, radar_num=RADAR_NUM,
@@ -99,6 +147,8 @@ if __name__ == "__main__":
                                               actor_lr=actor_lr, critic_lr=critic_lr, reward_decay=GAMMA,
                                               tau=TAU, batch_size=BATCH_SIZE)
         blue_fighter_models.append(blue_fighter_model)
+        critic_optimizer_fighters.append(torch.optim.Adam(blue_fighter_model.eval_net_critic_fighter.parameters(), lr=critic_lr))
+
     red_agent.set_map_info(size_x, size_y, blue_detector_num, blue_fighter_num)
 
     writer = SummaryWriter('runs/MADDPG_SAC')
@@ -235,16 +285,11 @@ if __name__ == "__main__":
                     other_agents = [agent for i, agent in enumerate(blue_fighter_models) if i != y]
                     blue_fighter_models[y].learn('model/MADDPG_SAC/%d' % y, writer, batch_indexes, other_agents,
                                                  red_action_replay)
+                train_critic(blue_fighter_models, attention, critic_optimizer_fighters, batch_indexes, red_action_replay)
 
             # 当达到一个epoch最大步数，强制进入下一个epoch
             if step_cnt > MAX_STEP:
                 if x+1 > start_learn_epoch:
-                    mem_size = blue_fighter_models[0].get_memory_size()
-                    batch_indexes = random.sample(range(mem_size), BATCH_SIZE)
-                    for y in range(blue_fighter_num):
-                        other_agents = [agent for i, agent in enumerate(blue_fighter_models) if i != y]
-                        blue_fighter_models[y].learn('model/MADDPG_SAC/%d' % y, writer, batch_indexes, other_agents,
-                                                     red_action_replay)
                     writer.add_scalar(tag='blue_avg_epoch_reward', scalar_value=blue_epoch_reward/step_cnt,
                                           global_step=x-start_learn_epoch)
                 # print(alive_id)

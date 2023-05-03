@@ -8,6 +8,7 @@ class NetFighterCritic(nn.Module):
 
     def __init__(self, agent_num):
         super(NetFighterCritic, self).__init__()
+        # Encoder
         self.conv1 = nn.Sequential(  # batch * 2 * 100 * 100
             nn.Conv2d(
                 in_channels=2,
@@ -48,6 +49,8 @@ class NetFighterCritic(nn.Module):
             nn.LayerNorm(128),
             nn.ReLU(),
         )
+
+        # Decoder
         self.feature_fc = nn.Sequential(  # 25 * 25 * 64 + 256 + 256
             nn.Linear((32 * 4 * 4 + 64 + 128), 256),
             nn.LayerNorm(256),
@@ -57,6 +60,7 @@ class NetFighterCritic(nn.Module):
             nn.Linear(256, 1),
         )
 
+        # Encoder2
         self.conv1_ = nn.Sequential(  # batch * 2 * 100 * 100
             nn.Conv2d(
                 in_channels=2,
@@ -96,8 +100,10 @@ class NetFighterCritic(nn.Module):
             nn.LayerNorm(128),
             nn.ReLU(),
         )
+
+        # Decoder2
         self.feature_fc_ = nn.Sequential(  # 25 * 25 * 64 + 256 + 256
-            nn.Linear((32 * 4 * 4 + 64 + 128), 256),
+            nn.Linear(512, 256),
             nn.LayerNorm(256),
             nn.ReLU(),
         )
@@ -105,7 +111,9 @@ class NetFighterCritic(nn.Module):
             nn.Linear(256, 1),
         )
 
-    def forward(self, img, info, act):
+    def encoding(self, img, info, act):
+        # q1
+        # encoder
         img_feature1 = self.conv1(img)
         img_feature2 = self.conv2(img_feature1)
         img_feature3 = self.conv3(img_feature2)
@@ -113,11 +121,11 @@ class NetFighterCritic(nn.Module):
         img_feature5 = self.img_layernorm(img_feature4)
         info_feature = self.info_fc(info)
         action_feature = self.action_fc(act)
-        combined = torch.cat((img_feature5, info_feature.view(info_feature.size(0), -1),
-                              action_feature.view(action_feature.size(0), -1)), dim=1)
-        feature = self.feature_fc(combined)
-        q1 = self.decision_fc(feature)
+        e1 = torch.cat((img_feature5, info_feature.view(info_feature.size(0), -1),
+                        action_feature.view(action_feature.size(0), -1)), dim=1)
 
+        # q2
+        # encoder
         img_feature1_ = self.conv1(img)
         img_feature2_ = self.conv2(img_feature1_)
         img_feature3_ = self.conv3(img_feature2_)
@@ -125,8 +133,17 @@ class NetFighterCritic(nn.Module):
         img_feature5_ = self.img_layernorm(img_feature4_)
         info_feature_ = self.info_fc_(info)
         action_feature_ = self.action_fc(act)
-        combined_ = torch.cat((img_feature5_, info_feature_.view(info_feature_.size(0), -1),
-                               action_feature_.view(action_feature_.size(0), -1)), dim=1)
-        feature_ = self.feature_fc_(combined_)
-        q2 = self.decision_fc_(feature_)
+        e2 = torch.cat((img_feature5_, info_feature_.view(info_feature_.size(0), -1),
+                        action_feature_.view(action_feature_.size(0), -1)), dim=1)
+        return e1, e2
+
+    def decoding(self, attention):
+        # q1
+        f1 = self.feature_fc(attention)
+        q1 = self.decision_fc(f1)
+
+        # q2
+        f2 = self.feature_fc_(attention)
+        q2 = self.decision_fc_(f2)
+
         return q1, q2
