@@ -38,7 +38,7 @@ class NetFighterCritic(nn.Module):
             ),
             nn.ReLU(),
         )  # batch * 32 * 4 * 4
-        self.img_layernorm = nn.LayerNorm(25 * 25 * 6)
+        self.img_layernorm = nn.LayerNorm(32 * 4 * 4)
         self.info_fc = nn.Sequential(  # batch * 3
             nn.Linear(3, 64),
             nn.LayerNorm(64),
@@ -52,12 +52,12 @@ class NetFighterCritic(nn.Module):
 
         # Decoder
         self.feature_fc = nn.Sequential(  # 25 * 25 * 64 + 256 + 256
-            nn.Linear((32 * 4 * 4 + 64 + 128), 256),
-            nn.LayerNorm(256),
+            nn.Linear(256, 128),
+            nn.LayerNorm(128),
             nn.ReLU(),
         )
         self.decision_fc = nn.Sequential(
-            nn.Linear(256, 1),
+            nn.Linear(128, 1),
         )
 
         # Encoder2
@@ -89,7 +89,8 @@ class NetFighterCritic(nn.Module):
                 stride=1,
             ),
             nn.ReLU(),
-        )  # batch * 32 * 4 * 4        self.img_layernorm_ = nn.LayerNorm(25 * 25 * 6)
+        )  # batch * 32 * 4 * 4
+        self.img_layernorm_ = nn.LayerNorm(32 * 4 * 4)
         self.info_fc_ = nn.Sequential(  # batch * 3
             nn.Linear(3, 64),
             nn.LayerNorm(64),
@@ -102,13 +103,13 @@ class NetFighterCritic(nn.Module):
         )
 
         # Decoder2
-        self.feature_fc_ = nn.Sequential(  # 25 * 25 * 64 + 256 + 256
-            nn.Linear(512, 256),
-            nn.LayerNorm(256),
+        self.feature_fc_ = nn.Sequential(
+            nn.Linear(256, 128),
+            nn.LayerNorm(128),
             nn.ReLU(),
         )
         self.decision_fc_ = nn.Sequential(
-            nn.Linear(256, 1),
+            nn.Linear(128, 1),
         )
 
     def encoding(self, img, info, act):
@@ -126,24 +127,24 @@ class NetFighterCritic(nn.Module):
 
         # q2
         # encoder
-        img_feature1_ = self.conv1(img)
-        img_feature2_ = self.conv2(img_feature1_)
-        img_feature3_ = self.conv3(img_feature2_)
+        img_feature1_ = self.conv1_(img)
+        img_feature2_ = self.conv2_(img_feature1_)
+        img_feature3_ = self.conv3_(img_feature2_)
         img_feature4_ = img_feature3_.view(img_feature3_.size(0), -1)
-        img_feature5_ = self.img_layernorm(img_feature4_)
+        img_feature5_ = self.img_layernorm_(img_feature4_)
         info_feature_ = self.info_fc_(info)
-        action_feature_ = self.action_fc(act)
+        action_feature_ = self.action_fc_(act)
         e2 = torch.cat((img_feature5_, info_feature_.view(info_feature_.size(0), -1),
                         action_feature_.view(action_feature_.size(0), -1)), dim=1)
         return e1, e2
 
-    def decoding(self, attention):
+    def decoding(self, attention1, attention2):
         # q1
-        f1 = self.feature_fc(attention)
+        f1 = self.feature_fc(attention1)
         q1 = self.decision_fc(f1)
 
         # q2
-        f2 = self.feature_fc_(attention)
+        f2 = self.feature_fc_(attention2)
         q2 = self.decision_fc_(f2)
 
         return q1, q2

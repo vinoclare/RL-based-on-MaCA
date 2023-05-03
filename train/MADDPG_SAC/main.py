@@ -36,7 +36,7 @@ ALPHA = 0.2  # 温度系数
 replace_target_iter = 10  # target网络更新频率
 MAX_STEP = 1999  # 1个epoch内最大步数
 LEARN_INTERVAL = 500  # 学习间隔
-start_learn_epoch = 5  # 第x个epoch开始训练
+start_learn_epoch = 3  # 第x个epoch开始训练
 pass_step = 10  # 间隔x个step保存一次经验
 
 # 网络学习率
@@ -61,60 +61,118 @@ for file in os.listdir(runs_path):
     os.remove(path)
 
 
-def boundary_punish(all_pos, actions):
-    # 对Agent试图越过边界的惩罚
-    ps = []
-    for i, (pos, act) in enumerate(zip(all_pos, actions)):
-        ps.append(0)
-        # 靠近上下边界的情况
-        if pos[1] < 50 or pos[1] > 950:
-            dist = pos[1] if pos[1] < 50 else 1000 - pos[1]  # agent距离边界的距离
-            theta = math.pi / 180 * act[0]  # 弧度
-            ps[i] -= np.abs(math.sin(theta)) * (50 - dist)
-        # 靠近左右边界的情况
-        if pos[0] < 50 or pos[0] > 950:
-            dist = pos[0] if pos[0] < 50 else 1000 - pos[0]  # agent距离边界的距离
-            theta = math.pi / 180 * act[0]  # 弧度
-            ps[i] -= np.abs(math.cos(theta)) * (50 - dist)
-    return ps
-
-
 def train_critic(agents, Attention, critic_optimizer_fighters, batch_indexes, red_replay):
-    e1, e2 = [], []
-    e1_, e2_ = [], []
-    loss_func = nn.MSELoss()
-    for i in range(len(agents)):
-        mate_agents = [agent for j, agent in enumerate(agents) if j != i]
-        s_screen_batch, s_info_batch, s__screen_batch, s__info_batch, all_mem_action, all_action_, log_probs_, r_batch,\
-            alive_batch, done_batch = agents[i].get_data(batch_indexes, mate_agents, red_replay)
-        e1_next, e2_next = agents[i].target_net_critic_fighter.encoding(s__screen_batch, s__info_batch, all_action_)
-        e1_cur, e2_cur = agents[i].eval_net_critic_fighter(s_screen_batch, s_info_batch, all_mem_action)
-        e1.append(e1_next)
-        e2.append(e2_next)
-        e1_.append(e1_cur)
-        e2.append(e2_cur)
+    with torch.autograd.set_detect_anomaly(True):
+        e1, e2 = [], []
+        e1_, e2_ = [], []
+        loss_func = nn.MSELoss()
+        critic_loss_mean = 0
 
-    attentions1 = Attention(e1)
-    attentions2 = Attention(e2)
-    attentions1_ = Attention(e1_)
-    attentions2_ = Attention(e2_)
+        # 敌方action
+        other_a_batch = red_replay.sample_replay(batch_indexes)
 
-    for i in range(len(agents)):
-        mate_agents = [agent for j, agent in enumerate(agents) if j != i]
-        s_screen_batch, s_info_batch, s__screen_batch, s__info_batch, all_mem_action, all_action_, log_probs_, r_batch,\
-            alive_batch, done_batch = agents[i].get_data(batch_indexes, mate_agents, red_replay)
-        q1_next = agents[i].target_net_critic_fighter.decoding(attentions1[i])
-        q2_next = agents[i].target_net_critic_fighter.decoding(attentions2[i])
-        q_target = torch.min(q1_next, q2_next) - ALPHA * log_probs_
-        q_target = r_batch + alive_batch * GAMMA * q_target * (1 - done_batch)
+        s_screen_batches, s_info_batches, mate_a_batches, s__screen_batches, s__info_batches = [], [], [], [], []
+        r_batches, alive_batches, done_batches, self_a_batches = [], [], [], []
+        for i in range(len(agents)):
+            mate_agents = [agent for j, agent in enumerate(agents) if j != i]
+            s_screen_batch, s_info_batch, s__screen_batch, s__info_batch, mate_a_batch, r_batch,\
+                alive_batch, done_batch, self_a_batch = agents[i].get_data(batch_indexes, mate_agents, red_replay)
+            s_screen_batches.append(s_screen_batch)
+            s_info_batches.append(s_info_batch)
+            mate_a_batches.append(mate_a_batch)
+            s__screen_batches.append(s__screen_batch)
+            s__info_batches.append(s__info_batch)
+            r_batches.append(r_batch)
+            alive_batches.append(alive_batch)
+            done_batches.append(done_batch)
+            self_a_batches.append(self_a_batch)
 
-        q1_cur = agents[i].eval_net_critic_fighter.decoding(attentions1_[i])
-        q2_cur = agents[i].eval_net_critic_fighter.decoding(attentions2_[i])
+        log_probs_es = []
+        for i in range(len(agents)):
+            action_, log_probs_ = agents[i].choose_action_batch(s__screen_batches[i], s__info_batches[i])
+            action_ = torch.unsqueeze(action_, 1)
+            log_probs_es.append(log_probs_)
+            all_action_ = torch.cat([action_, mate_a_batches[i], other_a_batch], 1).view(mate_a_batches[i].size(0), -1)
+            all_mem_action = torch.cat([self_a_batches[i], mate_a_batches[i], other_a_batch], 1).view(mate_a_batches[i].size(0), -1)
+            e1_next, e2_next = agents[i].target_net_critic_fighter.encoding(s__screen_batches[i], s__info_batches[i], all_action_)
+            e1_cur, e2_cur = agents[i].eval_net_critic_fighter.encoding(s_screen_batches[i], s_info_batches[i], all_mem_action)
+            e1.append(e1_next)
+            e2.append(e2_next)
+            e1_.append(e1_cur)
+            e2_.append(e2_cur)
 
-        critic_loss = loss_func(q1_cur, q_target.detach()) + loss_func(q2_cur, q_target.detach())
-        critic_optimizer_fighters[i].zero_grad()
-        critic_loss.backward()
-        critic_optimizer_fighters[i].step()
+        attentions1 = Attention(e1)
+        attentions2 = Attention(e2)
+        attentions1_ = Attention(e1_)
+        attentions2_ = Attention(e2_)
+
+        for i in range(len(agents)):
+            q1_next, q2_next = agents[i].target_net_critic_fighter.decoding(attentions1[i], attentions2[i])
+            q_next = (torch.min(q1_next, q2_next) - ALPHA * log_probs_es[i]).detach()
+            q_target = r_batches[i] + alive_batches[i] * GAMMA * q_next * (1 - done_batches[i])
+
+            q1_cur, q2_cur = agents[i].eval_net_critic_fighter.decoding(attentions1_[i], attentions2_[i])
+            # a1 = torch.rand(256, 256).cuda()
+            # a2 = torch.rand(256, 256).cuda()
+            # q1_cur, q2_cur = agents[i].eval_net_critic_fighter.decoding(a1, a2)
+
+            critic_loss = loss_func(q1_cur, q_target) + loss_func(q2_cur, q_target)
+            critic_loss_mean += critic_loss
+            critic_optimizer_fighters[i].zero_grad()
+            critic_loss.backward(retain_graph=True)
+
+        # 梯度缩放
+        attention.scale_grads()
+
+        for i in range(len(agents)):
+            critic_optimizer_fighters[i].step()
+    return critic_loss_mean
+
+
+def train_actor(agents, Attention, policy_optimizer_fighters, batch_indexes, red_replay):
+    with torch.autograd.set_detect_anomaly(True):
+        e1 = []
+        e2 = []
+        actor_loss_mean = 0
+
+        # 敌方action
+        other_a_batch = red_replay.sample_replay(batch_indexes)
+
+        s_screen_batches, s_info_batches, mate_a_batches = [], [], []
+
+        for i in range(len(agents)):
+            mate_agents = [agent for j, agent in enumerate(agents) if j != i]
+            s_screen_batch, s_info_batch, _, _, mate_a_batch, _, _, _, _ = \
+                agents[i].get_data(batch_indexes, mate_agents, red_replay)
+            s_screen_batches.append(s_screen_batch)
+            s_info_batches.append(s_info_batch)
+            mate_a_batches.append(mate_a_batch)
+
+        for i in range(len(agents)):
+            action1, log_probs = agents[i].choose_action_batch(s_screen_batches[i], s_info_batches[i])
+            action1 = torch.unsqueeze(action1, 1)
+            all_action = torch.cat([action1, mate_a_batches[i], other_a_batch], 1).view(mate_a_batches[i].size(0), -1)
+
+            e1_pi, e2_pi = agents[i].eval_net_critic_fighter.encoding(s_screen_batches[i], s_info_batches[i], all_action)
+            e1.append(e1_pi)
+            e2.append(e2_pi)
+
+        attentions1 = Attention(e1)
+        attentions2 = Attention(e2)
+
+        for i in range(len(agents)):
+            q1_pi, q2_pi = agents[i].eval_net_critic_fighter.decoding(attentions1[i], attentions2[i])
+            min_q_pi = torch.min(q1_pi, q2_pi)
+            action2, log_probs2 = agents[i].choose_action_batch(s_screen_batches[i], s_info_batches[i])
+            actor_loss = ((ALPHA * log_probs2) - min_q_pi).mean()
+            actor_loss_mean += actor_loss
+
+            policy_optimizer_fighters[i].zero_grad()
+            actor_loss.backward(retain_graph=True)
+            # nn.utils.clip_grad_norm_(self.eval_net_critic_fighter.parameters(), 0.5)
+        for i in range(len(agents)):
+            policy_optimizer_fighters[i].step()
+    return actor_loss_mean
 
 
 if __name__ == "__main__":
@@ -136,10 +194,11 @@ if __name__ == "__main__":
     blue_fighter_models = []
 
     # Attention模块
-    attention = Attention()
+    attention = Attention(10).cuda()
 
-    # critic优化器
+    # 优化器
     critic_optimizer_fighters = []
+    policy_optimizer_fighters = []
     for y in range(blue_fighter_num):
         blue_fighter_model = MADDPG.RLFighter(name='blue_%d' % y, agent_num=(DETECTOR_NUM + FIGHTER_NUM) * 2,
                                               attack_num=ATTACK_IND_NUM, fighter_num=FIGHTER_NUM, radar_num=RADAR_NUM,
@@ -148,6 +207,7 @@ if __name__ == "__main__":
                                               tau=TAU, batch_size=BATCH_SIZE)
         blue_fighter_models.append(blue_fighter_model)
         critic_optimizer_fighters.append(torch.optim.Adam(blue_fighter_model.eval_net_critic_fighter.parameters(), lr=critic_lr))
+        policy_optimizer_fighters.append(torch.optim.Adam(blue_fighter_model.policy_net_fighter.parameters(), lr=actor_lr))
 
     red_agent.set_map_info(size_x, size_y, blue_detector_num, blue_fighter_num)
 
@@ -160,6 +220,7 @@ if __name__ == "__main__":
 
     # 训练循环
     global_step_cnt = 0
+    learn_step_counter = 0
     for x in range(MAX_EPOCH):
         print("Epoch: %d" % x)
         step_cnt = 0
@@ -281,11 +342,16 @@ if __name__ == "__main__":
                 # detector_model.learn()
                 mem_size = blue_fighter_models[0].get_memory_size()
                 batch_indexes = random.sample(range(mem_size), BATCH_SIZE)
-                for y in range(blue_fighter_num):
-                    other_agents = [agent for i, agent in enumerate(blue_fighter_models) if i != y]
-                    blue_fighter_models[y].learn('model/MADDPG_SAC/%d' % y, writer, batch_indexes, other_agents,
-                                                 red_action_replay)
-                train_critic(blue_fighter_models, attention, critic_optimizer_fighters, batch_indexes, red_action_replay)
+                actor_loss = train_actor(blue_fighter_models, attention, policy_optimizer_fighters, batch_indexes,
+                                         red_action_replay)
+                critic_loss = train_critic(blue_fighter_models, attention, critic_optimizer_fighters,
+                                           batch_indexes, red_action_replay)
+                # 训练过程保存
+                writer.add_scalar(tag='actor_loss', scalar_value=actor_loss,
+                                  global_step=learn_step_counter)
+                writer.add_scalar(tag='critic_loss', scalar_value=critic_loss,
+                                  global_step=learn_step_counter)
+                learn_step_counter += 1
 
             # 当达到一个epoch最大步数，强制进入下一个epoch
             if step_cnt > MAX_STEP:

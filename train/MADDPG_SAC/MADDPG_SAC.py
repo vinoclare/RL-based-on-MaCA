@@ -197,19 +197,11 @@ class RLFighter:
                 tem_act = torch.unsqueeze(action, 1)
                 mate_a_batch = torch.cat([mate_a_batch, tem_act], 1)
 
-        # 敌方action
-        other_a_batch = red_replay.sample_replay(batch_indexes)
-
         # 自己的action
         self_a_batch = torch.unsqueeze(self_a_batch, 1)
 
-        all_mem_action = torch.cat([self_a_batch, mate_a_batch, other_a_batch], 1).view(mate_a_batch.size(0), -1)
-        action_, log_probs_ = self.choose_action_batch(s__screen_batch, s__info_batch)
-        action_ = torch.unsqueeze(action_, 1)
-        all_action_ = torch.cat([action_, mate_a_batch, other_a_batch], 1).view(mate_a_batch.size(0), -1)
-
-        return s_screen_batch, s_info_batch, s__screen_batch, s__info_batch, all_mem_action, \
-            all_action_, log_probs_, r_batch, alive_batch, done_batch
+        return s_screen_batch, s_info_batch, s__screen_batch, s__info_batch, mate_a_batch, \
+            r_batch, alive_batch, done_batch, self_a_batch
 
     def learn(self, save_path, writer, batch_indexes, mate_agents, red_replay):
         # 复制参数+保存参数

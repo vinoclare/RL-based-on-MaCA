@@ -1,12 +1,12 @@
 import torch
 import torch.nn as nn
-import numpy as np
 
 class Attention(nn.Module):
     # Attention模块
 
-    def __init__(self):
+    def __init__(self, agent_num):
         super(Attention, self).__init__()
+        self.agent_num = agent_num
         self.key_extractor1 = nn.Linear(32 * 4 * 4 + 64 + 128, 256)
         self.key_extractor2 = nn.Linear(32 * 4 * 4 + 64 + 128, 256)
 
@@ -17,6 +17,11 @@ class Attention(nn.Module):
         self.query_extractor2 = nn.Linear(32 * 4 * 4 + 64 + 128, 256)
 
         self.softmax = nn.Softmax(dim=1)
+
+    def scale_grads(self):
+        # 梯度缩放
+        for p in self.parameters():
+            p.grad.data.mul_(1. / self.agent_num)
 
     def forward(self, encodings):
         k1, k2, v1, v2, q1, q2 = [], [], [], [], [], []
@@ -30,8 +35,6 @@ class Attention(nn.Module):
             q1.append(self.query_extractor1(e))
             q2.append(self.query_extractor2(e))
 
-        a1 = []
-        a2 = []
         for i in range(len(encodings)):
             for j in range(len(encodings)):
                 if j == 0:
