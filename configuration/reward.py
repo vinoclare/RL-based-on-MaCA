@@ -30,13 +30,13 @@ class GlobalVar:
     # 目前用到的的reward
 
     # Round reward：totally win
-    reward_totally_win = 100
+    reward_totally_win = 1000
     # Round reward：totally lose
-    reward_totally_lose = -100
+    reward_totally_lose = -1000
     # Round reward：win
-    reward_win = 50
+    reward_win = 500
     # Round reward：lose
-    reward_lose = -50
+    reward_lose = -500
     # Round reward：draw
     reward_draw = -20
 
