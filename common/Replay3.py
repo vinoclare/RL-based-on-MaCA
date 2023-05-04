@@ -1,6 +1,4 @@
 from collections import *
-import random
-
 import numpy as np
 import torch
 
@@ -53,3 +51,11 @@ class Memory(object):
         self_a_batch = torch.FloatTensor(np.array(self_a_batch)).cuda()
 
         return self_a_batch
+
+    def save_to_file(self, path):
+        np.save(path, self.data)
+
+    def load_from_file(self, path):
+        self.data = np.load(path, allow_pickle=True)
+        self.data = deque(self.data)
+        self.memory_counter = len(self.data)

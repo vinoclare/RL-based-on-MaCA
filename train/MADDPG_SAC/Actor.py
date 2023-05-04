@@ -45,7 +45,12 @@ class NetFighterActor(nn.Module):
             nn.ReLU(),
         )
         self.feature_fc = nn.Sequential(
-            nn.Linear((32 * 4 * 4 + 64), 256),
+            nn.Linear((32 * 4 * 4 + 64), 512),
+            nn.LayerNorm(512),
+            nn.ReLU(),
+        )
+        self.feature_fc2 = nn.Sequential(
+            nn.Linear(512, 256),
             nn.LayerNorm(256),
             nn.ReLU(),
         )
@@ -64,8 +69,9 @@ class NetFighterActor(nn.Module):
         img_feature5 = self.img_layernorm(img_feature4)
         info_feature = self.info_fc(info)
         combined = torch.cat((img_feature5, info_feature.view(info_feature.size(0), -1)), dim=1)
-        feature = self.feature_fc(combined)
-        means = self.mean_head(feature)
-        log_stds = self.log_std_head(feature)
+        feature1 = self.feature_fc(combined)
+        feature2 = self.feature_fc2(feature1)
+        means = self.mean_head(feature2)
+        log_stds = self.log_std_head(feature2)
         log_stds = torch.clamp(log_stds, -20, 2)
         return means, log_stds

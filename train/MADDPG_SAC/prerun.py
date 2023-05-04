@@ -15,7 +15,6 @@ import math
 import numpy as np
 from agent.fix_rule_no_att.agent import Agent
 from interface import Environment
-import random
 from train.MADDPG_SAC import MADDPG_SAC as MADDPG
 from torch.utils.tensorboard import SummaryWriter
 from common.Replay3 import Memory
@@ -23,8 +22,9 @@ from configuration.reward import GlobalVar as REWARD
 
 MAP_PATH = os.path.join(root_path, 'maps/1000_1000_fighter10v10.map')
 
-RENDER = True  # 是否渲染，渲染能加载出实时的训练画面，但是会降低训练速度
-MAX_EPOCH = 2000
+RENDER = False  # 是否渲染，渲染能加载出实时的训练画面，但是会降低训练速度
+PRERUN_EPOCH = 25
+
 BATCH_SIZE = 256
 GAMMA = 0.99  # reward discount
 TAU = 0.99
@@ -32,6 +32,7 @@ TAU = 0.99
 replace_target_iter = 10  # target网络更新频率
 MAX_STEP = 1999  # 1个epoch内最大步数
 LEARN_INTERVAL = 500  # 学习间隔
+start_learn_epoch = 5  # 第x个epoch开始训练
 pass_step = 10  # 间隔x个step保存一次经验
 
 # 网络学习率
@@ -46,14 +47,6 @@ RADAR_NUM = 10  # 雷达频点总数
 
 # COURSE_NUM = 16
 # ACTION_NUM = COURSE_NUM * ATTACK_IND_NUM
-
-# 清除tensorboard文件
-runs_path = os.path.join(root_path, 'runs/MADDPG_SAC')
-if not os.path.exists(runs_path):
-    os.makedirs(runs_path)
-for file in os.listdir(runs_path):
-    path = os.path.join(runs_path, file)
-    os.remove(path)
 
 
 if __name__ == "__main__":
@@ -81,25 +74,12 @@ if __name__ == "__main__":
                                               tau=TAU, batch_size=BATCH_SIZE)
         blue_fighter_models.append(blue_fighter_model)
     red_agent.set_map_info(size_x, size_y, blue_detector_num, blue_fighter_num)
+
     red_action_replay = Memory(MAX_MEM_SIZE)
-
-    # 加载预存储的数据
-    for i in range(len(blue_fighter_models)):
-        path = os.path.join('prerun_data', '%d_data.npy' % i)
-        blue_fighter_models[i].load_from_file(path)
-
-    path = os.path.join('prerun_data', 'red_data.npy')
-    red_action_replay.load_from_file(path)
-
-    writer = SummaryWriter('runs/MADDPG_SAC')
-
-    for y in range(blue_fighter_num):
-        if not os.path.exists('model/MADDPG_SAC/%d' % y):
-            os.makedirs('model/MADDPG_SAC/%d' % y)
 
     # 训练循环
     global_step_cnt = 0
-    for x in range(MAX_EPOCH):
+    for x in range(PRERUN_EPOCH):
         print("Epoch: %d" % x)
         step_cnt = 0
         env.reset()  # 重置环境
@@ -127,9 +107,6 @@ if __name__ == "__main__":
                 blue_obs_list.append({'screen': copy.deepcopy(tmp_img_obs), 'info': copy.deepcopy(tmp_info_obs)})
                 blue_fighter_action.append(true_action)
 
-                # if np.any(tmp_img_obs[1] == 150):
-                #     fuck
-
             blue_fighter_action = np.array(blue_fighter_action)
 
             # step X 1
@@ -152,10 +129,6 @@ if __name__ == "__main__":
                 red_detector_reward, red_fighter_reward, red_game_reward, blue_detector_reward, \
                     blue_fighter_reward, blue_game_reward = env.get_reward()
                 blue_step_reward += (blue_fighter_reward + blue_game_reward)
-
-                # blue_boundary_punish = boundary_punish(blue_poses, blue_fighter_action)
-                # blue_boundary_punish = [BETA * i for i in blue_boundary_punish]
-                # blue_fighter_reward2 = blue_fighter_reward + blue_boundary_punish
 
             step_cnt += pass_step - 1
 
@@ -206,33 +179,21 @@ if __name__ == "__main__":
                 blue_fighter_models[y].store_replay(blue_obs_list[y], blue_alive[y], self_action,
                                                     blue_step_reward[y]/pass_step, blue_obs_list_, done)
             global_step_cnt += 1
-            # writer.add_scalar(tag='step_reward', scalar_value=blue_step_reward.mean(),
-            #                   global_step=global_step_cnt)
             blue_epoch_reward += blue_step_reward.mean()
 
             # 环境判定完成后（回合完毕），开始学习模型参数
             if env.get_done():
-                writer.add_scalar(tag='blue_avg_epoch_reward', scalar_value=blue_epoch_reward/step_cnt,
-                                  global_step=x)
-                print("avg_epoch_reward: %.3f" % (blue_epoch_reward/step_cnt))
                 break
-            # 未达到done但是达到了学习间隔时也学习模型参数
-            if step_cnt != 0 and (step_cnt % LEARN_INTERVAL == 0):
-                mem_size = blue_fighter_models[0].get_memory_size()
-                batch_indexes = random.sample(range(mem_size), BATCH_SIZE)
-                for y in range(blue_fighter_num):
-                    other_agents = [agent for i, agent in enumerate(blue_fighter_models) if i != y]
-                    blue_fighter_models[y].learn('model/MADDPG_SAC/%d' % y, writer, batch_indexes, other_agents,
-                                                 red_action_replay)
 
             # 当达到一个epoch最大步数，强制进入下一个epoch
             if step_cnt > MAX_STEP:
-                writer.add_scalar(tag='blue_avg_epoch_reward', scalar_value=blue_epoch_reward/step_cnt,
-                                      global_step=x)
-                writer.add_scalar(tag='win', scalar_value=win,
-                                      global_step=x)
-                # print(alive_id)
-                print("avg_epoch_reward: %.3f" % (blue_epoch_reward / step_cnt))
                 break
 
-    writer.close()
+    if not os.path.exists('prerun_data'):
+        os.makedirs('prerun_data')
+
+    for i in range(len(blue_fighter_models)):
+        path = os.path.join('prerun_data', '%d_data.npy' % i)
+        blue_fighter_models[i].save_to_file(path)
+    path = os.path.join('prerun_data', 'red_data.npy')
+    red_action_replay.save_to_file(path)

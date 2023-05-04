@@ -37,7 +37,7 @@ class NetFighterCritic(nn.Module):
             ),
             nn.ReLU(),
         )  # batch * 32 * 4 * 4
-        self.img_layernorm = nn.LayerNorm(25 * 25 * 6)
+        self.img_layernorm = nn.LayerNorm(32 * 4 * 4)
         self.info_fc = nn.Sequential(  # batch * 3
             nn.Linear(3, 64),
             nn.LayerNorm(64),
@@ -49,7 +49,12 @@ class NetFighterCritic(nn.Module):
             nn.ReLU(),
         )
         self.feature_fc = nn.Sequential(  # 25 * 25 * 64 + 256 + 256
-            nn.Linear((32 * 4 * 4 + 64 + 128), 256),
+            nn.Linear((32 * 4 * 4 + 64 + 128), 512),
+            nn.LayerNorm(512),
+            nn.ReLU(),
+        )
+        self.feature_fc2 = nn.Sequential(
+            nn.Linear(512, 256),
             nn.LayerNorm(256),
             nn.ReLU(),
         )
@@ -86,6 +91,7 @@ class NetFighterCritic(nn.Module):
             ),
             nn.ReLU(),
         )  # batch * 32 * 4 * 4        self.img_layernorm_ = nn.LayerNorm(25 * 25 * 6)
+        self.img_layernorm_ = nn.LayerNorm(32 * 4 * 4)
         self.info_fc_ = nn.Sequential(  # batch * 3
             nn.Linear(3, 64),
             nn.LayerNorm(64),
@@ -97,7 +103,12 @@ class NetFighterCritic(nn.Module):
             nn.ReLU(),
         )
         self.feature_fc_ = nn.Sequential(  # 25 * 25 * 64 + 256 + 256
-            nn.Linear((32 * 4 * 4 + 64 + 128), 256),
+            nn.Linear((32 * 4 * 4 + 64 + 128), 512),
+            nn.LayerNorm(512),
+            nn.ReLU(),
+        )
+        self.feature_fc2_ = nn.Sequential(
+            nn.Linear(512, 256),
             nn.LayerNorm(256),
             nn.ReLU(),
         )
@@ -115,18 +126,20 @@ class NetFighterCritic(nn.Module):
         action_feature = self.action_fc(act)
         combined = torch.cat((img_feature5, info_feature.view(info_feature.size(0), -1),
                               action_feature.view(action_feature.size(0), -1)), dim=1)
-        feature = self.feature_fc(combined)
-        q1 = self.decision_fc(feature)
+        feature1 = self.feature_fc(combined)
+        feature2 = self.feature_fc2(feature1)
+        q1 = self.decision_fc(feature2)
 
-        img_feature1_ = self.conv1(img)
-        img_feature2_ = self.conv2(img_feature1_)
-        img_feature3_ = self.conv3(img_feature2_)
+        img_feature1_ = self.conv1_(img)
+        img_feature2_ = self.conv2_(img_feature1_)
+        img_feature3_ = self.conv3_(img_feature2_)
         img_feature4_ = img_feature3_.view(img_feature3_.size(0), -1)
-        img_feature5_ = self.img_layernorm(img_feature4_)
+        img_feature5_ = self.img_layernorm_(img_feature4_)
         info_feature_ = self.info_fc_(info)
-        action_feature_ = self.action_fc(act)
+        action_feature_ = self.action_fc_(act)
         combined_ = torch.cat((img_feature5_, info_feature_.view(info_feature_.size(0), -1),
                                action_feature_.view(action_feature_.size(0), -1)), dim=1)
-        feature_ = self.feature_fc_(combined_)
-        q2 = self.decision_fc_(feature_)
+        feature1_ = self.feature_fc_(combined_)
+        feature2_ = self.feature_fc2_(feature1_)
+        q2 = self.decision_fc_(feature2_)
         return q1, q2
