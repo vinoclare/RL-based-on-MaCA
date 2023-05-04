@@ -203,6 +203,12 @@ class RLFighter:
         return s_screen_batch, s_info_batch, s__screen_batch, s__info_batch, mate_a_batch, \
             r_batch, alive_batch, done_batch, self_a_batch
 
+    def save_to_file(self, path):
+        self.memory.save_to_file(path)
+
+    def load_from_file(self, path):
+        self.memory.load_from_file(path)
+
     def learn(self, save_path, writer, batch_indexes, mate_agents, red_replay):
         # 复制参数+保存参数
         # learn50次复制/保存一次参数

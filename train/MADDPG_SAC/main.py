@@ -18,7 +18,7 @@ import numpy as np
 from agent.fix_rule_no_att.agent import Agent
 from interface import Environment
 import random
-from train.MADDPG_SAC import MADDPG_SAC as MADDPG
+from train.MADDPG_SAC import MADDPG_SAC_ATTENTION as MADDPG
 from torch.utils.tensorboard import SummaryWriter
 from common.Replay3 import Memory
 from configuration.reward import GlobalVar as REWARD
@@ -36,7 +36,6 @@ ALPHA = 0.2  # 温度系数
 replace_target_iter = 10  # target网络更新频率
 MAX_STEP = 1999  # 1个epoch内最大步数
 LEARN_INTERVAL = 500  # 学习间隔
-start_learn_epoch = 3  # 第x个epoch开始训练
 pass_step = 10  # 间隔x个step保存一次经验
 
 # 网络学习率
@@ -61,6 +60,17 @@ for file in os.listdir(runs_path):
     os.remove(path)
 
 
+def seed_everything(seed=1029):
+    random.seed(seed)
+    os.environ['PYTHONHASHSEED'] = str(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
+
 def train_critic(agents, Attention, critic_optimizer_fighters, batch_indexes, red_replay):
     with torch.autograd.set_detect_anomaly(True):
         e1, e2 = [], []
@@ -71,6 +81,7 @@ def train_critic(agents, Attention, critic_optimizer_fighters, batch_indexes, re
         # 敌方action
         other_a_batch = red_replay.sample_replay(batch_indexes)
 
+        r_mean = 0
         s_screen_batches, s_info_batches, mate_a_batches, s__screen_batches, s__info_batches = [], [], [], [], []
         r_batches, alive_batches, done_batches, self_a_batches = [], [], [], []
         for i in range(len(agents)):
@@ -86,6 +97,7 @@ def train_critic(agents, Attention, critic_optimizer_fighters, batch_indexes, re
             alive_batches.append(alive_batch)
             done_batches.append(done_batch)
             self_a_batches.append(self_a_batch)
+            r_mean += r_batch.mean()
 
         log_probs_es = []
         for i in range(len(agents)):
@@ -126,7 +138,7 @@ def train_critic(agents, Attention, critic_optimizer_fighters, batch_indexes, re
 
         for i in range(len(agents)):
             critic_optimizer_fighters[i].step()
-    return critic_loss_mean
+    return critic_loss_mean/10, r_mean/10
 
 
 def train_actor(agents, Attention, policy_optimizer_fighters, batch_indexes, red_replay):
@@ -172,10 +184,12 @@ def train_actor(agents, Attention, policy_optimizer_fighters, batch_indexes, red
             # nn.utils.clip_grad_norm_(self.eval_net_critic_fighter.parameters(), 0.5)
         for i in range(len(agents)):
             policy_optimizer_fighters[i].step()
-    return actor_loss_mean
+    return actor_loss_mean/10
 
 
 if __name__ == "__main__":
+    seed_everything(1000)
+
     # 红色方为fix rule no attack，蓝色方为MADDPG
     red_agent = Agent()
 
@@ -211,8 +225,17 @@ if __name__ == "__main__":
 
     red_agent.set_map_info(size_x, size_y, blue_detector_num, blue_fighter_num)
 
-    writer = SummaryWriter('runs/MADDPG_SAC')
+    # 加载预存储的数据
     red_action_replay = Memory(MAX_MEM_SIZE)
+    for i in range(len(blue_fighter_models)):
+        path = os.path.join('prerun_data', '%d_data.npy' % i)
+        blue_fighter_models[i].load_from_file(path)
+
+    path = os.path.join('prerun_data', 'red_data.npy')
+    red_action_replay.load_from_file(path)
+    print('PreData loaded!')
+
+    writer = SummaryWriter('runs/MADDPG_SAC')
 
     for y in range(blue_fighter_num):
         if not os.path.exists('model/MADDPG_SAC/%d' % y):
@@ -313,13 +336,16 @@ if __name__ == "__main__":
                 blue_obs_list_ = {'screen': copy.deepcopy(tmp_img_obs), 'info': copy.deepcopy(tmp_info_obs)}
                 self_action = blue_fighter_action[y]
                 done = 0
+                win = 0
                 if env.get_done() or step_cnt > MAX_STEP:
                     done = 1
                     if red_alive == 0:
                         blue_step_reward[y] += REWARD.reward_totally_win
+                        win = 2
                         print('epoch: %d  total win!' % x)
                     elif red_alive < 4:
                         blue_step_reward[y] += REWARD.reward_win
+                        win = 1
                         print('epoch: %d  win!' % x)
                     blue_step_reward[y] += 30 * (10 - red_alive)
                 blue_fighter_models[y].store_replay(blue_obs_list[y], blue_alive[y], self_action,
@@ -331,35 +357,35 @@ if __name__ == "__main__":
 
             # 环境判定完成后（回合完毕），开始学习模型参数
             if env.get_done():
-                # detector_model.learn()
-                if x + 1 > start_learn_epoch:
-                    writer.add_scalar(tag='blue_avg_epoch_reward', scalar_value=blue_epoch_reward/step_cnt,
-                                      global_step=x-start_learn_epoch)
+                writer.add_scalar(tag='blue_epoch_reward', scalar_value=blue_epoch_reward,
+                                  global_step=x)
                 print("avg_epoch_reward: %.3f" % (blue_epoch_reward/step_cnt))
                 break
             # 未达到done但是达到了学习间隔时也学习模型参数
-            if x+1 > start_learn_epoch and step_cnt != 0 and (step_cnt % LEARN_INTERVAL == 0):
+            if step_cnt != 0 and (step_cnt % LEARN_INTERVAL == 0):
                 # detector_model.learn()
                 mem_size = blue_fighter_models[0].get_memory_size()
                 batch_indexes = random.sample(range(mem_size), BATCH_SIZE)
                 actor_loss = train_actor(blue_fighter_models, attention, policy_optimizer_fighters, batch_indexes,
                                          red_action_replay)
-                critic_loss = train_critic(blue_fighter_models, attention, critic_optimizer_fighters,
-                                           batch_indexes, red_action_replay)
+                critic_loss, r_mean = train_critic(blue_fighter_models, attention, critic_optimizer_fighters,
+                                                   batch_indexes, red_action_replay)
                 # 训练过程保存
                 writer.add_scalar(tag='actor_loss', scalar_value=actor_loss,
                                   global_step=learn_step_counter)
                 writer.add_scalar(tag='critic_loss', scalar_value=critic_loss,
                                   global_step=learn_step_counter)
+                writer.add_scalar(tag='r', scalar_value=r_mean,
+                                  global_step=learn_step_counter)
                 learn_step_counter += 1
 
             # 当达到一个epoch最大步数，强制进入下一个epoch
             if step_cnt > MAX_STEP:
-                if x+1 > start_learn_epoch:
-                    writer.add_scalar(tag='blue_avg_epoch_reward', scalar_value=blue_epoch_reward/step_cnt,
-                                          global_step=x-start_learn_epoch)
-                # print(alive_id)
-                print("avg_epoch_reward: %.3f" % (blue_epoch_reward / step_cnt))
+                writer.add_scalar(tag='blue_epoch_reward', scalar_value=blue_epoch_reward,
+                                      global_step=x)
+                writer.add_scalar(tag='win', scalar_value=win,
+                                      global_step=x)
+                print("epoch_reward: %.1f" % (blue_epoch_reward))
                 break
 
     writer.close()

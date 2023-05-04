@@ -108,3 +108,12 @@ class Memory(object):
 
         return [s_screen_batch, s_info_batch, alive_batch, self_a_batch,
                 r_batch, s__screen_batch, s__info_batch, done_batch]
+
+    def save_to_file(self, path):
+        np.save(path, self.data)
+
+    def load_from_file(self, path):
+        self.data = np.load(path, allow_pickle=True)
+        self.data = deque(self.data)
+        self.memory_counter = len(self.data)
+
