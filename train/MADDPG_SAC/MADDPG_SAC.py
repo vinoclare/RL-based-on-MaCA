@@ -20,11 +20,13 @@ class RLFighter:
             attack_num,
             fighter_num,
             radar_num,
+            noise_rate=5,
             actor_lr=3e-4,
             critic_lr=3e-4,
             q_lr=3e-4,
             reward_decay=0.99,
             tau=0.99,
+            reward_scaling=0.3,
             alpha=0.2,
             replace_target_iter=50,
             max_memory_size=1e4,
@@ -41,7 +43,8 @@ class RLFighter:
         self.radar_num = radar_num  # 雷达频点数
         self.alpha = alpha  # 温度系数
         self.batch_size = batch_size
-        self.noise_rate = 5  # 噪声率（用于为动作添加随机扰动）
+        self.reward_scaling = reward_scaling  # reward缩放系数
+        self.noise_rate = noise_rate  # 噪声率（用于为动作添加随机扰动）
         self.ac_lr = actor_lr  # actor网络学习率
         self.cr_lr = critic_lr  # critic网络学习率
         self.gamma = reward_decay  # 奖励的衰减率
@@ -66,9 +69,9 @@ class RLFighter:
         self.policy_net_fighter = NetFighterActor()
 
         # 初始化网络参数
-        for m1 in self.policy_net_fighter.modules():
-            if isinstance(m1, nn.Conv2d) or isinstance(m1, nn.Linear):
-                init.kaiming_uniform_(m1.weight, mode='fan_in', nonlinearity='leaky_relu')
+        # for m1 in self.policy_net_fighter.modules():
+        #     if isinstance(m1, nn.Conv2d) or isinstance(m1, nn.Linear):
+        #         init.kaiming_uniform_(m1.weight, mode='fan_in', nonlinearity='leaky_relu')
 
         self.copy_param(self.eval_net_critic_fighter, self.target_net_critic_fighter, 0)
 
@@ -108,6 +111,25 @@ class RLFighter:
     def get_memory_size(self):
         return self.memory.get_size()
 
+    def save_best_model(self, save_path, epoch_reward):
+        torch.save(self.target_net_critic_fighter.state_dict(),
+                   save_path + '/critic/model_' + str(int(epoch_reward)) + '.pkl')
+        torch.save(self.policy_net_fighter.state_dict(),
+                   save_path + '/actor/model_' + str(int(epoch_reward)) + '.pkl')
+        # 超过5个模型后删除最低reward的
+        critic_path = save_path + '/critic'
+        actor_path = save_path + '/actor'
+        critic_pkls = os.listdir(critic_path)
+        actor_pkls = os.listdir(actor_path)
+        if len(critic_pkls) > 5:
+            rewards = []
+            for file in critic_pkls:
+                reward = int(float(file[6:-4]))
+                rewards.append(reward)
+            index = np.argmin(rewards)
+            os.remove(os.path.join(critic_path, critic_pkls[index]))
+            os.remove(os.path.join(actor_path, actor_pkls[index]))
+
     # 选择行为(只针对单个数据，不是batch，用于决策时)
     def choose_action(self, img_obs, info_obs):
         img_obs = torch.unsqueeze(torch.FloatTensor(img_obs), 0)
@@ -122,30 +144,15 @@ class RLFighter:
         stds = torch.exp(log_stds)
         dist = Normal(means, stds)
         act = dist.rsample()
-        course = torch.tanh(act[:, 0]) * 180
 
-        try:
-            # 航向
-            course = int(course)
-            course = int(course + self.noise_rate * np.random.randn())  # 对航向添加一个随机扰动
+        action = torch.tanh(act)
+        action = (action + 1) / 2
+        course = int((action[:, 0] * 2 - 1) * 180 + self.noise_rate * np.random.randn())
+        radar = int(action[:, 1] * (self.radar_num + 1))
+        disturb = int(action[:, 2] * (self.radar_num + 2))
+        attack = int(action[:, 3] * self.attack_num)
 
-            # 雷达频点
-            radar = act[:, 1]
-            radar = int(1 / (1 + torch.exp(-radar)) * self.radar_num)
-
-            # 干扰频点
-            disturb = act[:, 2]
-            disturb = int(1 / (1 + torch.exp(-disturb)) * (self.radar_num + 1))
-
-            # 攻击
-            attack = act[:, 3]  # 攻击
-            attack = int(1 / (1 + torch.exp(-attack)) * self.attack_num)
-        except:
-            course = 179
-            radar = 1
-            disturb = 0
-            attack = 0
-        return [course, radar, disturb, attack]
+        return [course, radar, disturb, attack], action[0].detach().numpy()
 
     # 针对batch的数据选择行为(使用eval_actor网络计算，用于训练)
     def choose_action_batch(self, img_obs_batch, info_obs_batch):
@@ -159,31 +166,12 @@ class RLFighter:
         stds = torch.exp(log_stds)
         dist = Normal(means, stds)
         act = dist.rsample()
-        # 航向
-        course = torch.tanh(act[:, 0]) * 180
-
-        # 雷达
-        radar = 1 / (1 + torch.exp(-act[:, 1])) * self.radar_num
-
-        # 干扰
-        disturb = 1 / (1 + torch.exp(-act[:, 2])) * (self.radar_num + 1)
-
-        # 攻击
-        attack = act[:, 3]
-        attack = 1 / (1 + torch.exp(-attack)) * self.attack_num
-
-        # course = course + noise
-        course = torch.unsqueeze(course, 1)
-        radar = torch.unsqueeze(radar, 1)
-        disturb = torch.unsqueeze(disturb, 1)
-        attack = torch.unsqueeze(attack, 1)
-        action = torch.cat([course, radar, disturb, attack], 1)
 
         act2 = torch.tanh(act)
         log_prob = dist.log_prob(act) - torch.log(1 - act2.pow(2) + torch.tensor(1e-6).float())
         log_prob = log_prob.sum(dim=1)
         log_prob = torch.unsqueeze(log_prob, 1)
-        return action, log_prob
+        return act2, log_prob
 
     def save_to_file(self, path):
         self.memory.save_to_file(path)
@@ -191,37 +179,11 @@ class RLFighter:
     def load_from_file(self, path):
         self.memory.load_from_file(path)
 
-    def learn(self, save_path, writer, batch_indexes, mate_agents, red_replay):
+    def learn(self, writer, batch_indexes, mate_agents, red_replay):
         # 复制参数+保存参数
         # learn50次复制/保存一次参数
         if self.learn_step_counter % self.replace_target_iter == 0:
             self.copy_param(self.eval_net_critic_fighter, self.target_net_critic_fighter, self.tau)
-            # step_counter_str = '%09d' % self.learn_step_counter
-            # critic_path = save_path + '/critic/'
-            # actor_path = save_path + '/actor/'
-            # if not os.path.exists(critic_path):
-            #     os.mkdir(critic_path)
-            # if not os.path.exists(actor_path):
-            #     os.mkdir(actor_path)
-            # torch.save(self.target_net_critic_fighter.state_dict(),
-            #            save_path + '/critic/model_' + step_counter_str + '.pkl')
-            # torch.save(self.policy_net_fighter.state_dict(),
-            #            save_path + '/actor/model_' + step_counter_str + '.pkl')
-            # if self.pkl_counter < self.max_pkl:
-            #     self.pkl_counter += 1
-            # else:
-            #     # 删除最旧的模型参数
-            #     files = os.listdir(critic_path)
-            #     for file in files:
-            #         if file.endswith('pkl'):
-            #             os.remove(os.path.join(critic_path, file))
-            #             break
-            #
-            #     files = os.listdir(actor_path)
-            #     for file in files:
-            #         if file.endswith('pkl'):
-            #             os.remove(os.path.join(actor_path, file))
-            #            break
 
         # 采样Replay
         [s_screen_batch, s_info_batch, alive_batch, self_a_batch,
@@ -251,7 +213,7 @@ class RLFighter:
             all_mem_action = torch.cat([self_a_batch, mate_a_batch, other_a_batch], 1).view(mate_a_batch.size(0), -1)
             q1_next, q2_next = self.target_net_critic_fighter(s__screen_batch, s__info_batch, all_action_)
             q_target = torch.min(q1_next, q2_next) - self.alpha * log_probs_
-            q_target = r_batch + alive_batch * self.gamma * q_target * (1 - done_batch)
+            q_target = self.reward_scaling * r_batch + alive_batch * self.gamma * q_target * (1 - done_batch)
         q1_cur, q2_cur = self.eval_net_critic_fighter(s_screen_batch, s_info_batch, all_mem_action)
 
         critic_loss = self.loss_func(q1_cur, q_target) + self.loss_func(q2_cur, q_target)
