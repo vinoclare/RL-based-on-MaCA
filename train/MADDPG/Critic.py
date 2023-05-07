@@ -10,7 +10,7 @@ class NetFighterCritic(nn.Module):
         super(NetFighterCritic, self).__init__()
         self.conv = nn.Sequential(  # batch * 100 * 100 * 5
             nn.Conv2d(
-                in_channels=5,
+                in_channels=2,
                 out_channels=8,
                 kernel_size=5,
                 stride=1,

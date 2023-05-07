@@ -33,7 +33,9 @@ class ObsConstruct:
             img_context = np.concatenate((img_context, joint_img[0, :, :, :]), axis=2)
             data_context = fighter_data[x, :]
             fighter_obs_list.append({'info': copy.deepcopy(data_context), 'screen': copy.deepcopy(img_context),
-                                     'alive': alive_status[x + self.detector_num][0]})
+                                     'alive': alive_status[x + self.detector_num][0],
+                                     'pos_x': fighter_data_obs_list[x]['pos_x'],
+                                     'pos_y': fighter_data_obs_list[x]['pos_y']})
         obs_dict['detector'] = detector_obs_list
         obs_dict['fighter'] = fighter_obs_list
         return obs_dict
