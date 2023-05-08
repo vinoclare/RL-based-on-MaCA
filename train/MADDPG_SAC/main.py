@@ -222,7 +222,7 @@ def set_value_in_img(img, pos_x, pos_y, value):
 
 
 if __name__ == "__main__":
-    seed_everything(1004)
+    seed_everything(1008)
 
     # 红色方为fix rule no attack，蓝色方为MADDPG
     red_agent = Agent()
@@ -393,7 +393,7 @@ if __name__ == "__main__":
                         blue_step_reward[y] += REWARD.reward_win / 10
                         win = 1
                         print('epoch: %d  win!' % x)
-                    blue_step_reward[y] += 30 * (10 - red_alive) / 10
+                    blue_step_reward[y] += 3 * (10 - red_alive)
                 blue_fighter_models[y].store_replay(blue_obs_list[y], blue_alive[y], self_action,
                                                     blue_step_reward[y]/pass_step, blue_obs_list_, done)
             global_step_cnt += 1
@@ -422,7 +422,6 @@ if __name__ == "__main__":
                                 reward = int(float(file[10:-4]))
                                 rewards.append(reward)
                             index = np.argmin(rewards)
-                            os.remove(os.path.join('model/MADDPG_SAC/Attention/', att_pkls[index]))
                             os.remove(os.path.join('model/MADDPG_SAC/Attention/', att_pkls[index]))
 
                 print("epoch_reward: %.3f" % blue_epoch_reward)
