@@ -244,11 +244,6 @@ class RLFighter:
 
         self.cost_critic_his.append(critic_loss)
         self.cost_actor_his.append(actor_loss)
-        print("learn_step: %d, %s_critic_loss: %.4f, %s_actor_loss: %.4f, mean_reward: %.2f" % (
-            self.learn_step_counter, self.name, critic_loss, self.name, actor_loss, torch.mean(r_batch)))
-
-        # 训练过程保存
-        writer.add_scalar(tag='%s_actor_loss' % self.name, scalar_value=actor_loss, global_step=self.learn_step_counter)
-        writer.add_scalar(tag='%s_critic_loss' % self.name, scalar_value=critic_loss, global_step=self.learn_step_counter)
 
         self.learn_step_counter += 1
+        return actor_loss, critic_loss

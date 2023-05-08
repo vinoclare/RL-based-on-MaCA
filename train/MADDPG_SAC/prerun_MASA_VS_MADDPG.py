@@ -89,10 +89,10 @@ if __name__ == "__main__":
     # for file in os.listdir('prerun_data'):
     #     os.remove(os.path.join('prerun_data', file))
 
-    if not os.path.exists('prerun_data/blue'):
-        os.makedirs('prerun_data/blue')
-    if not os.path.exists('prerun_data/red'):
-        os.makedirs('prerun_data/red')
+    if not os.path.exists('prerun_data/MASA_VS_MADDPG/blue'):
+        os.makedirs('prerun_data/MASA_VS_MADDPG/blue')
+    if not os.path.exists('prerun_data/MASA_VS_MADDPG/red'):
+        os.makedirs('prerun_data/MASA_VS_MADDPG/red')
 
     # 双方的obs构建模块
     red_agent_obs_ind = 'MADDPG_SAC'
@@ -348,8 +348,8 @@ if __name__ == "__main__":
         os.makedirs('prerun_data')
 
     for i in range(len(blue_fighter_models)):
-        path = os.path.join('prerun_data', 'blue', '%d_data.npy' % i)
+        path = os.path.join('prerun_data', 'MASA_VS_MADDPG', 'blue', '%d_data.npy' % i)
         blue_fighter_models[i].save_to_file(path)
 
-        path = os.path.join('prerun_data', 'red', '%d_data.npy' % i)
+        path = os.path.join('prerun_data', 'MASA_VS_MADDPG', 'red', '%d_data.npy' % i)
         red_fighter_models[i].save_to_file(path)

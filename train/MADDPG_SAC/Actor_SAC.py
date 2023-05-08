@@ -1,0 +1,77 @@
+import torch
+import torch.nn as nn
+
+
+class NetFighterActor(nn.Module):
+    # 决定航向与攻击类型的Actor网络
+    # 输入img（screen）信息、info信息、agent存活信息
+    # 输出航向（[0-359]离散值）、攻击类型(连续值)
+
+    def __init__(self):
+        super(NetFighterActor, self).__init__()
+        self.conv1 = nn.Sequential(  # batch * 2 * 100 * 100
+            nn.Conv2d(
+                in_channels=2,
+                out_channels=6,
+                kernel_size=5,
+                stride=3,
+            ),
+            nn.ReLU(),
+            nn.MaxPool2d(2),
+        )
+        self.conv2 = nn.Sequential(  # batch * 6 * 16 * 16
+            nn.Conv2d(
+                in_channels=6,
+                out_channels=12,
+                kernel_size=5,
+                stride=1,
+            ),
+            nn.ReLU(),
+            nn.MaxPool2d(2),
+        )
+        self.conv3 = nn.Sequential(  # batch * 12 * 6 * 6
+            nn.Conv2d(
+                in_channels=12,
+                out_channels=32,
+                kernel_size=3,
+                stride=1,
+            ),
+            nn.ReLU(),
+        )  # batch * 32 * 4 * 4
+        self.img_layernorm = nn.LayerNorm(32 * 4 * 4)
+        self.info_fc = nn.Sequential(
+            nn.Linear(3, 64),
+            nn.LayerNorm(64),
+            nn.ReLU(),
+        )
+        self.feature_fc = nn.Sequential(
+            nn.Linear((32 * 4 * 4 + 64), 512),
+            nn.LayerNorm(512),
+            nn.ReLU(),
+        )
+        self.feature_fc2 = nn.Sequential(
+            nn.Linear(512, 256),
+            nn.LayerNorm(256),
+            nn.ReLU(),
+        )
+        self.mean_head = nn.Sequential(
+            nn.Linear(256, 4),
+        )
+        self.log_std_head = nn.Sequential(
+            nn.Linear(256, 4),
+        )
+
+    def forward(self, img, info):
+        img_feature1 = self.conv1(img)
+        img_feature2 = self.conv2(img_feature1)
+        img_feature3 = self.conv3(img_feature2)
+        img_feature4 = img_feature3.view(img_feature3.size(0), -1)
+        img_feature5 = self.img_layernorm(img_feature4)
+        info_feature = self.info_fc(info)
+        combined = torch.cat((img_feature5, info_feature.view(info_feature.size(0), -1)), dim=1)
+        feature1 = self.feature_fc(combined)
+        feature2 = self.feature_fc2(feature1)
+        means = self.mean_head(feature2)
+        log_stds = self.log_std_head(feature2)
+        log_stds = torch.clamp(log_stds, -20, 2)
+        return means, log_stds

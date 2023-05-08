@@ -47,7 +47,7 @@ class GlobalVar:
     # Missile miss a fighter
     reward_strike_fighter_fail = -10
     # A fighter been destroyed
-    reward_fighter_destroyed = -20
+    reward_fighter_destroyed = -10
     # A valid attack action
     reward_strike_act_valid = 10
     # An invalid attack action

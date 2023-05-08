@@ -241,11 +241,11 @@ if __name__ == "__main__":
 
     # 加载预存储的数据
     for i in range(len(blue_fighter_models)):
-        path = os.path.join('prerun_data', 'blue', '%d_data.npy' % i)
+        path = os.path.join('prerun_data', 'MASA_VS_MADDPG', 'blue', '%d_data.npy' % i)
         blue_fighter_models[i].load_from_file(path)
 
     for i in range(len(red_fighter_models)):
-        path = os.path.join('prerun_data', 'red', '%d_data.npy' % i)
+        path = os.path.join('prerun_data', 'MASA_VS_MADDPG', 'red', '%d_data.npy' % i)
         red_fighter_models[i].load_from_file(path)
 
     print('PreData loaded!')
@@ -269,6 +269,7 @@ if __name__ == "__main__":
     learn_step_counter = 0
     blue_epoch_rewards = []
     red_epoch_rewards = []
+    wines = []
     for x in range(MAX_EPOCH):
         print("Epoch: %d" % x)
         step_cnt = 0
@@ -388,7 +389,7 @@ if __name__ == "__main__":
             # 获取reward
             red_detector_reward, red_fighter_reward, red_game_reward, blue_detector_reward, \
                 blue_fighter_reward, blue_game_reward = env.get_reward()
-            blue_step_reward = (blue_fighter_reward + blue_game_reward)
+            blue_step_reward = blue_fighter_reward + blue_game_reward
             red_step_reward = red_fighter_reward + red_game_reward
 
             # step X pass_step-1
@@ -399,7 +400,7 @@ if __name__ == "__main__":
                 # 获取reward
                 red_detector_reward, red_fighter_reward, red_game_reward, blue_detector_reward, \
                     blue_fighter_reward, blue_game_reward = env.get_reward()
-                blue_step_reward += (blue_fighter_reward + blue_game_reward)
+                blue_step_reward += blue_fighter_reward + blue_game_reward
                 red_step_reward += red_fighter_reward + red_game_reward
                 step_cnt += 1
 
@@ -424,6 +425,28 @@ if __name__ == "__main__":
                     blue_poses.append(tem_dict)
                     blue_alives += 1
 
+            # 判断胜负
+            if env.get_done() or step_cnt > MAX_STEP:
+                num_diff = blue_alives - red_alives
+                if num_diff > 7:
+                    win = 2
+                elif num_diff > 3:
+                    win = 1
+                elif num_diff < -7:
+                    win = -2
+                elif num_diff < -3:
+                    win = -1
+                elif num_diff > 0:
+                    win = 0.5
+                elif num_diff < 0:
+                    win = -0.5
+                else:
+                    win = 0
+                wines.append(win)
+                print('%s win!' % ('blue' if win > 0 else 'red'))
+                blue_win_rate = np.sum(np.array(wines) > 0) / len(wines)
+                red_win_rate = np.sum(np.array(wines) < 0) / len(wines)
+
             # 保存蓝色方replay
             red_obs_dict, blue_obs_dict = env.get_obs()
             for y in range(blue_fighter_num):
@@ -438,16 +461,17 @@ if __name__ == "__main__":
                 blue_obs_list_ = {'screen': copy.deepcopy(tmp_img_obs), 'info': copy.deepcopy(tmp_info_obs)}
                 self_action = blue_fighter_action[y]
                 done = 0
-                win = 0
                 if env.get_done() or step_cnt > MAX_STEP:
                     done = 1
-                    if red_alives == 0:
-                        blue_step_reward[y] += REWARD.reward_totally_win
-                        win = 2
-                    elif red_alives < 4:
-                        blue_step_reward[y] += REWARD.reward_win
-                        win = 1
-                    blue_step_reward[y] += 30 * (10 - red_alives)
+                    if win == 2:
+                        blue_step_reward[y] += REWARD.reward_totally_win/10
+                    elif win == 1:
+                        blue_step_reward[y] += REWARD.reward_win/10
+                    if win == -2:
+                        blue_step_reward[y] += REWARD.reward_totally_lose/10
+                    elif win == -1:
+                        blue_step_reward[y] += REWARD.reward_lose/10
+                    blue_step_reward[y] += 5 * num_diff
                 blue_fighter_models[y].store_replay(blue_obs_list[y], blue_alive[y], self_action,
                                                     blue_step_reward[y]/pass_step, blue_obs_list_, done)
 
@@ -464,16 +488,17 @@ if __name__ == "__main__":
                 red_obs_list_ = {'screen': copy.deepcopy(tmp_img_obs), 'info': copy.deepcopy(tmp_info_obs)}
                 self_action = red_fighter_action[y]
                 done = 0
-                win = 0
                 if env.get_done() or step_cnt > MAX_STEP:
                     done = 1
-                    if blue_alives == 0:
-                        red_step_reward[y] += REWARD.reward_totally_win
-                        win = 2
-                    elif blue_alives < 4:
-                        red_step_reward[y] += REWARD.reward_win
-                        win = 1
-                    red_step_reward[y] += 30 * (10 - blue_alives)
+                    if win == -2:
+                        red_step_reward[y] += REWARD.reward_totally_win/10
+                    elif win == -1:
+                        red_step_reward[y] += REWARD.reward_win/10
+                    if win == 2:
+                        red_step_reward[y] += REWARD.reward_totally_lose/10
+                    elif win == 1:
+                        red_step_reward[y] += REWARD.reward_lose/10
+                    red_step_reward[y] -= 5 * num_diff
                 red_fighter_models[y].store_replay(red_obs_list[y], red_alive[y], self_action,
                                                    red_step_reward[y]/pass_step, red_obs_list_, done)
 
@@ -486,6 +511,12 @@ if __name__ == "__main__":
                 writer.add_scalar(tag='blue_epoch_reward', scalar_value=blue_epoch_reward,
                                       global_step=x)
                 writer.add_scalar(tag='red_epoch_reward', scalar_value=red_epoch_reward,
+                                      global_step=x)
+                writer.add_scalar(tag='win', scalar_value=win,
+                                      global_step=x)
+                writer.add_scalar(tag='blue_win_rate', scalar_value=blue_win_rate,
+                                      global_step=x)
+                writer.add_scalar(tag='red_win_rate', scalar_value=red_win_rate,
                                       global_step=x)
                 # 保存模型
                 if len(blue_epoch_rewards) > 10:
@@ -597,6 +628,12 @@ if __name__ == "__main__":
                 writer.add_scalar(tag='blue_epoch_reward', scalar_value=blue_epoch_reward,
                                       global_step=x)
                 writer.add_scalar(tag='red_epoch_reward', scalar_value=red_epoch_reward,
+                                      global_step=x)
+                writer.add_scalar(tag='win', scalar_value=win,
+                                      global_step=x)
+                writer.add_scalar(tag='blue_win_rate', scalar_value=blue_win_rate,
+                                      global_step=x)
+                writer.add_scalar(tag='red_win_rate', scalar_value=red_win_rate,
                                       global_step=x)
                 # 保存模型
                 if len(blue_epoch_rewards) > 10:
