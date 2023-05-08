@@ -23,12 +23,9 @@ class RLFighter:
             critic_lr=1e-6,
             reward_decay=0.99,
             tau=0.95,
-            e_greedy=0.9,
             replace_target_iter=50,
             max_memory_size=1e4,
-            batch_size=512,
-            e_greedy_increment=None,
-            output_graph=False,
+            batch_size=256,
             load_state=False,
             model_path='',
     ):
@@ -220,32 +217,32 @@ class RLFighter:
             self.copy_param(self.eval_net_critic_fighter, self.target_net_critic_fighter, self.tau)
             self.copy_param(self.eval_net_actor_fighter, self.target_net_actor_fighter, self.tau)
             print('\ntarget_params_replaced\n')
-            step_counter_str = '%09d' % self.learn_step_counter
-            critic_path = save_path + '/critic/'
-            actor_path = save_path + '/actor/'
-            if not os.path.exists(critic_path):
-                os.mkdir(critic_path)
-            if not os.path.exists(actor_path):
-                os.mkdir(actor_path)
-            torch.save(self.target_net_critic_fighter.state_dict(),
-                       save_path + '/critic/model_' + step_counter_str + '.pkl')
-            torch.save(self.target_net_actor_fighter.state_dict(),
-                       save_path + '/actor/model_' + step_counter_str + '.pkl')
-            if self.pkl_counter < self.max_pkl:
-                self.pkl_counter += 1
-            else:
-                # 删除最旧的模型参数
-                files = os.listdir(critic_path)
-                for file in files:
-                    if file.endswith('pkl'):
-                        os.remove(os.path.join(critic_path, file))
-                        break
-
-                files = os.listdir(actor_path)
-                for file in files:
-                    if file.endswith('pkl'):
-                        os.remove(os.path.join(actor_path, file))
-                        break
+            # step_counter_str = '%09d' % self.learn_step_counter
+            # critic_path = save_path + '/critic/'
+            # actor_path = save_path + '/actor/'
+            # if not os.path.exists(critic_path):
+            #     os.mkdir(critic_path)
+            # if not os.path.exists(actor_path):
+            #     os.mkdir(actor_path)
+            # torch.save(self.target_net_critic_fighter.state_dict(),
+            #            save_path + '/critic/model_' + step_counter_str + '.pkl')
+            # torch.save(self.target_net_actor_fighter.state_dict(),
+            #            save_path + '/actor/model_' + step_counter_str + '.pkl')
+            # if self.pkl_counter < self.max_pkl:
+            #     self.pkl_counter += 1
+            # else:
+            #     # 删除最旧的模型参数
+            #     files = os.listdir(critic_path)
+            #     for file in files:
+            #         if file.endswith('pkl'):
+            #             os.remove(os.path.join(critic_path, file))
+            #             break
+            #
+            #     files = os.listdir(actor_path)
+            #     for file in files:
+            #         if file.endswith('pkl'):
+            #             os.remove(os.path.join(actor_path, file))
+            #             break
 
         # 采样Replay
         [s_screen_batch, s_info_batch, alive_batch, alive__batch, self_a_batch,
@@ -300,11 +297,5 @@ class RLFighter:
 
         self.cost_critic_his.append(critic_loss)
         self.cost_actor_his.append(actor_loss)
-        print("learn_step: %d, %s_critic_loss: %.4f, %s_actor_loss: %.4f, mean_reward: %.2f" % (
-            self.learn_step_counter, self.name, critic_loss, self.name, actor_loss, torch.mean(r_batch)))
-
-        # 训练过程保存
-        writer.add_scalar(tag='%s_actor_loss' % self.name, scalar_value=actor_loss, global_step=self.learn_step_counter)
-        writer.add_scalar(tag='%s_critic_loss' % self.name, scalar_value=critic_loss, global_step=self.learn_step_counter)
-
         self.learn_step_counter += 1
+        return actor_loss, critic_loss
