@@ -325,29 +325,29 @@ class RLFighter:
             self.copy_param(self.eval_net_critic_fighter, self.target_net_critic_fighter, self.tau)
             self.copy_param(self.eval_net_actor_fighter, self.target_net_actor_fighter, self.tau)
             print('\ntarget_params_replaced\n')
-            step_counter_str = '%09d' % self.learn_step_counter
-            torch.save(self.target_net_critic_fighter.state_dict(),
-                       save_path + '/critic/model_' + step_counter_str + '.pkl')
-            torch.save(self.target_net_actor_fighter.state_dict(),
-                       save_path + '/actor/model_' + step_counter_str + '.pkl')
-            if self.pkl_counter < self.max_pkl:
-                self.pkl_counter += 1
-            else:
-                # 删除最旧的模型参数
-                critic_path = os.path.join(save_path, 'critic')
-                actor_path = os.path.join(save_path, 'actor')
-
-                files = os.listdir(critic_path)
-                for file in files:
-                    if file.endswith('pkl'):
-                        os.remove(os.path.join(critic_path, file))
-                        break
-
-                files = os.listdir(actor_path)
-                for file in files:
-                    if file.endswith('pkl'):
-                        os.remove(os.path.join(actor_path, file))
-                        break
+            # step_counter_str = '%09d' % self.learn_step_counter
+            # torch.save(self.target_net_critic_fighter.state_dict(),
+            #            save_path + '/critic/model_' + step_counter_str + '.pkl')
+            # torch.save(self.target_net_actor_fighter.state_dict(),
+            #            save_path + '/actor/model_' + step_counter_str + '.pkl')
+            # if self.pkl_counter < self.max_pkl:
+            #     self.pkl_counter += 1
+            # else:
+            #     # 删除最旧的模型参数
+            #     critic_path = os.path.join(save_path, 'critic')
+            #     actor_path = os.path.join(save_path, 'actor')
+            #
+            #     files = os.listdir(critic_path)
+            #     for file in files:
+            #         if file.endswith('pkl'):
+            #             os.remove(os.path.join(critic_path, file))
+            #             break
+            #
+            #     files = os.listdir(actor_path)
+            #     for file in files:
+            #         if file.endswith('pkl'):
+            #             os.remove(os.path.join(actor_path, file))
+            #             break
 
         # 采样Replay
         [s_screen_batch, s_info_batch, alive_batch, alive__batch, self_a_batch,

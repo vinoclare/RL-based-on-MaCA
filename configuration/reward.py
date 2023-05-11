@@ -18,41 +18,42 @@ class GlobalVar:
     reward_radar_detector_fighter = 10
     # fighter radar see a detector
     reward_radar_fighter_detector = 20
-    # fighter radar see a fighter
-    reward_radar_fighter_fighter = 10
 
     # Missile hit a detector
     reward_strike_detector_success = 5
     # Missile miss a detector
     reward_strike_detector_fail = -1
-    # Missile hit a fighter
-    reward_strike_fighter_success = 3
-    # Missile miss a fighter
-    reward_strike_fighter_fail = -1
 
     # A detector been destroyed
-    reward_detector_destroyed = -4
-    # A fighter been destroyed
-    reward_fighter_destroyed = -2
+    reward_detector_destroyed = -20
 
-    # A valid attack action
-    reward_strike_act_valid = 1
-    # An invalid attack action
-    reward_strike_act_invalid = -1
-
-    # Keep alive in a step
-    reward_keep_alive_step = 1
+    # 目前用到的的reward
 
     # Round reward：totally win
-    reward_totally_win = 20
+    reward_totally_win = 1000
     # Round reward：totally lose
-    reward_totally_lose = -20
+    reward_totally_lose = -1000
     # Round reward：win
-    reward_win = 15
+    reward_win = 500
     # Round reward：lose
-    reward_lose = -15
+    reward_lose = -500
     # Round reward：draw
-    reward_draw = -10
+    reward_draw = -20
+
+    # fighter radar see a fighter
+    reward_radar_fighter_fighter = 10
+    # Missile hit a fighter
+    reward_strike_fighter_success = 20
+    # Missile miss a fighter
+    reward_strike_fighter_fail = -10
+    # A fighter been destroyed
+    reward_fighter_destroyed = -20
+    # A valid attack action
+    reward_strike_act_valid = 10
+    # An invalid attack action
+    reward_strike_act_invalid = -1
+    # Keep alive in a step
+    reward_keep_alive_step = 1
 
 
 def get_reward_radar_detector_detector():
