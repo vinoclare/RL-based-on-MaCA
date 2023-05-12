@@ -152,9 +152,9 @@ if __name__ == "__main__":
                 blue_fighter_models[y].store_replay(blue_obs_list[y], blue_alive[y], alive_, self_action,
                                                     blue_step_reward[y]/10, blue_obs_list_)
             blue_epoch_reward += blue_step_reward.mean()
-            for y in range(blue_fighter_num):
-                if not os.path.exists('model/MADDPG/MADDPG/%d' % y):
-                    os.mkdir('model/MADDPG/MADDPG/%d' % y)
+            # for y in range(blue_fighter_num):
+            #             #     if not os.path.exists('model/MADDPG/MADDPG/%d' % y):
+            #             #         os.mkdir('model/MADDPG/MADDPG/%d' % y)
 
             # 未达到done但是达到了学习间隔时也学习模型参数
             if (blue_fighter_models[0].get_memory_size() > start_learn_threshold) and (step_cnt % LEARN_INTERVAL == 0):

@@ -23,7 +23,7 @@ class RLFighter:
             critic_lr=1e-6,
             reward_decay=0.99,
             tau=0.95,
-            replace_target_iter=50,
+            replace_target_iter=10,
             max_memory_size=1e4,
             batch_size=256,
             load_state=False,
@@ -42,10 +42,7 @@ class RLFighter:
         self.cr_lr = critic_lr  # critic网络学习率
         self.gamma = reward_decay  # 奖励的衰减率
         self.tau = tau  # 模型参数复制时的参数保留率
-        self.epsilon_max = e_greedy
         self.replace_target_iter = replace_target_iter  # eval网络参数更新到target网络的频率
-        self.epsilon_increment = e_greedy_increment
-        self.epsilon = 0 if e_greedy_increment is not None else self.epsilon_max
 
         # 经验池
         self.memory = Memory(max_memory_size)
